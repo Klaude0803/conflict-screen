@@ -11,6 +11,7 @@ downstream code can tell confirmed data from mock or partial data.
 """
 
 import os
+import time
 from datetime import datetime, timedelta
 
 import config
@@ -22,6 +23,10 @@ API_KEY_ENV = "SCRAPECREATORS_API_KEY"
 # Safety caps so a single creator can never trigger unbounded API spend.
 _MAX_VIDEO_PAGES = 5        # pages of channel uploads to scan, newest first
 _MAX_SPONSOR_LOOKUPS = 40   # in-window videos to query for sponsors
+
+# Retry policy for transient upstream errors (5xx / 429).
+_MAX_RETRIES = 3            # extra attempts after the first
+_RETRY_BACKOFF = 1.0        # seconds; doubled each retry (1s, 2s, 4s)
 
 
 class _CreatorLookupError(Exception):
@@ -199,24 +204,36 @@ def _fetch_live(handle):
         )
 
     def api_get(path, params):
-        resp = requests.get(
-            BASE_URL + path,
-            params=params,
-            headers={"x-api-key": api_key},
-            timeout=30,
-        )
-        if resp.status_code == 401:
-            raise _CreatorLookupError(
-                f"API auth failed (401) — check {API_KEY_ENV}."
+        # Transient upstream errors (5xx) and rate limits (429) get a few
+        # quick retries with backoff so a flaky single call doesn't doom an
+        # otherwise-fetchable creator. Auth/payment/not-found are terminal.
+        last_resp = None
+        for attempt in range(_MAX_RETRIES + 1):
+            resp = requests.get(
+                BASE_URL + path,
+                params=params,
+                headers={"x-api-key": api_key},
+                timeout=30,
             )
-        if resp.status_code == 402:
-            raise _CreatorLookupError(
-                "API payment required (402) — account out of credits."
-            )
-        if resp.status_code == 404:
-            raise _CreatorLookupError("Creator/video not found (404).")
-        resp.raise_for_status()
-        return resp.json()
+            if resp.status_code == 401:
+                raise _CreatorLookupError(
+                    f"API auth failed (401) — check {API_KEY_ENV}."
+                )
+            if resp.status_code == 402:
+                raise _CreatorLookupError(
+                    "API payment required (402) — account out of credits."
+                )
+            if resp.status_code == 404:
+                raise _CreatorLookupError("Creator/video not found (404).")
+            if resp.status_code == 429 or resp.status_code >= 500:
+                last_resp = resp
+                if attempt < _MAX_RETRIES:
+                    time.sleep(_RETRY_BACKOFF * (2 ** attempt))
+                    continue
+            resp.raise_for_status()
+            return resp.json()
+        # Exhausted retries on a transient error.
+        last_resp.raise_for_status()
 
     clean_handle = handle.strip().lstrip("@")
 
