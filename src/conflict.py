@@ -47,6 +47,17 @@ def screen_conflict(record, brand):
     category = config.category_for_brand(brand)
     months = config.LOOKBACK_MONTHS
 
+    # A failed live lookup (401/402/network/etc.) leaves a short reason on the
+    # record. We can't judge conflict from data we never got, so report
+    # UNVERIFIED and surface the reason.
+    if record.get("error"):
+        return {
+            "status": UNVERIFIED,
+            "category": category,
+            "matched_sponsors": [],
+            "reason": record["error"],
+        }
+
     if category is None:
         return {
             "status": UNVERIFIED,

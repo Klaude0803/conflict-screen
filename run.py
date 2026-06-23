@@ -74,8 +74,10 @@ def main(argv=None):
         result = screen_mod.screen_creator(record, args.brand)
         results.append(result)
 
-        flag = "verified" if result["verified"] else "UNVERIFIED data"
+        flag = "verified" if result["verified"] else "unverified data"
         print(f"  {handle}: {result['status']}  ({flag})")
+        if result.get("conflict_reason"):
+            print(f"      reason: {result['conflict_reason']}")
         for b in result["bullets"]:
             print(f"      - {b}")
 

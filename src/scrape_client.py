@@ -13,6 +13,20 @@ downstream code can tell confirmed data from mock or partial data.
 import os
 from datetime import datetime, timedelta
 
+import config
+
+# Live Scrape Creators API settings.
+BASE_URL = "https://api.scrapecreators.com"
+API_KEY_ENV = "SCRAPECREATORS_API_KEY"
+
+# Safety caps so a single creator can never trigger unbounded API spend.
+_MAX_VIDEO_PAGES = 5        # pages of channel uploads to scan, newest first
+_MAX_SPONSOR_LOOKUPS = 40   # in-window videos to query for sponsors
+
+
+class _CreatorLookupError(Exception):
+    """A recoverable, per-creator failure — the batch should continue."""
+
 
 def _empty_record(handle):
     """A record skeleton with everything blank and verified=False.
@@ -33,6 +47,9 @@ def _empty_record(handle):
         "verified": False,
         # source labels where the data came from, for transparency.
         "source": None,
+        # error holds a short reason when a live lookup failed for this
+        # creator; it stays None for mock data and successful live lookups.
+        "error": None,
     }
 
 
@@ -124,68 +141,170 @@ def _fetch_mock(handle):
     return record
 
 
+def _parse_iso_dt(value):
+    """Parse an ISO-8601 timestamp (e.g. '2025-01-23T22:48:53.914Z') to a
+    naive UTC datetime, or None if it can't be parsed."""
+    if not value:
+        return None
+    text = value.replace("Z", "+0000")
+    for fmt in ("%Y-%m-%dT%H:%M:%S.%f%z", "%Y-%m-%dT%H:%M:%S%z"):
+        try:
+            return datetime.strptime(text, fmt).replace(tzinfo=None)
+        except ValueError:
+            continue
+    return None
+
+
+def _live_error_record(handle, reason):
+    """Build a record for a creator whose live lookup failed.
+
+    Nothing is invented: fields stay empty, verified stays False, and the
+    short reason is attached so the screener reports UNVERIFIED with context.
+    """
+    record = _empty_record(handle)
+    record["source"] = "Scrape Creators API (live)"
+    record["verified"] = False
+    record["error"] = reason
+    return record
+
+
+# ===========================================================================
+# LIVE SCRAPE CREATORS API INTEGRATION (the marked spot).
+#
+# Pipeline per creator handle:
+#   1. GET /v1/youtube/channel        -> name + subscriberCount + channelId
+#   2. GET /v1/youtube/channel-videos -> recent uploads with publish dates
+#   3. GET /v1/youtube/video/sponsors -> brand names for each in-window upload
+#
+# Auth is the x-api-key header read from the SCRAPECREATORS_API_KEY env var.
+# We set verified=True only when the channel lookup actually returns data, map
+# only fields the API returns (missing ones stay empty), and deliberately do
+# NOT populate audience_geo — Scrape Creators does not expose YouTube
+# audience-location data, so geo reads UNKNOWN rather than us inventing it.
+# Any 401 / 402 / failed lookup for one creator is caught and turned into an
+# UNVERIFIED record so the rest of the batch keeps running.
+# ===========================================================================
 def _fetch_live(handle):
-    """Fetch a creator from the real Scrape Creators API.
+    """Fetch a creator from the real Scrape Creators YouTube API."""
+    import requests  # imported lazily so mock mode never needs requests
 
-    ===================================================================
-    WIRE THE LIVE SCRAPE CREATORS API HERE.
-    ===================================================================
-    Read your API key from the environment (do not hard-code it):
+    api_key = os.environ.get(API_KEY_ENV)
+    if not api_key:
+        # A totally missing key is a configuration problem, not a per-creator
+        # one, so fail fast with a clear message instead of producing a report
+        # full of identical errors.
+        raise RuntimeError(
+            f"Live mode requested but {API_KEY_ENV} is not set. Export your "
+            "Scrape Creators API key, or run without --live to use mock data."
+        )
 
-        api_key = os.environ.get("SCRAPE_CREATORS_API_KEY")
-
-    Then call the API (e.g. with ``requests``), map the response into the
-    record skeleton from ``_empty_record``, and set ``verified=True`` ONLY
-    for fields the API actually returned. Leave anything missing empty —
-    never fill gaps with guesses.
-
-    Example skeleton (pseudo-code, adapt to the real endpoints):
-
-        import requests
+    def api_get(path, params):
         resp = requests.get(
-            "https://api.scrapecreators.com/v1/creator",
-            params={"handle": handle},
+            BASE_URL + path,
+            params=params,
             headers={"x-api-key": api_key},
             timeout=30,
         )
+        if resp.status_code == 401:
+            raise _CreatorLookupError(
+                f"API auth failed (401) — check {API_KEY_ENV}."
+            )
+        if resp.status_code == 402:
+            raise _CreatorLookupError(
+                "API payment required (402) — account out of credits."
+            )
+        if resp.status_code == 404:
+            raise _CreatorLookupError("Creator/video not found (404).")
         resp.raise_for_status()
-        payload = resp.json()
+        return resp.json()
+
+    clean_handle = handle.strip().lstrip("@")
+
+    try:
+        # --- 1. Channel details -------------------------------------------
+        channel = api_get("/v1/youtube/channel", {"handle": clean_handle})
 
         record = _empty_record(handle)
         record["source"] = "Scrape Creators API (live)"
-        record["name"] = payload.get("name")          # stays None if absent
-        record["platform"] = payload.get("platform")
-        record["subscribers"] = payload.get("subscriber_count")
-        record["audience_geo"] = payload.get("audience_geo", {})
-        record["recent_sponsors"] = [
-            {"name": s["name"], "category": s.get("category"), "date": s.get("date")}
-            for s in payload.get("sponsors", [])
-        ]
+        # The channel lookup succeeded, so the fields we map below are real.
         record["verified"] = True
+        record["platform"] = "YouTube"
+        # Map only fields the API actually returned; missing ones stay empty.
+        if channel.get("name"):
+            record["name"] = channel["name"]
+        if channel.get("subscriberCount") is not None:
+            record["subscribers"] = channel["subscriberCount"]
+        channel_id = channel.get("channelId")
+        # audience_geo intentionally left empty (see header note).
+
+        # --- 2. Recent uploads inside the lookback window -----------------
+        cutoff = datetime.utcnow() - timedelta(days=30 * config.LOOKBACK_MONTHS)
+        in_window = []  # list of {"url", "date"} for videos within the window
+        token = None
+        for _ in range(_MAX_VIDEO_PAGES):
+            if channel_id:
+                params = {"channelId": channel_id}
+            else:
+                params = {"handle": clean_handle}
+            if token:
+                params["continuationToken"] = token
+
+            page = api_get("/v1/youtube/channel-videos", params)
+            videos = page.get("videos") or []
+            reached_old = False
+            for v in videos:
+                published = _parse_iso_dt(v.get("publishedTime"))
+                if published is None:
+                    continue
+                # Uploads come newest-first, so once we pass the cutoff we can
+                # stop paging.
+                if published < cutoff:
+                    reached_old = True
+                    break
+                if v.get("url"):
+                    in_window.append({
+                        "url": v["url"],
+                        "date": published.strftime("%Y-%m-%d"),
+                    })
+
+            token = page.get("continuationToken")
+            if reached_old or not token or not videos:
+                break
+
+        # --- 3. Sponsors for each in-window upload ------------------------
+        sponsors = []
+        for vid in in_window[:_MAX_SPONSOR_LOOKUPS]:
+            data = api_get("/v1/youtube/video/sponsors", {"url": vid["url"]})
+            for s in data.get("suspectedSponsors") or []:
+                name = s.get("name")
+                if not name:
+                    continue
+                sponsors.append({
+                    "name": name,
+                    # The API doesn't categorize sponsors; conflict screening
+                    # matches by name pattern, so we leave category empty.
+                    "category": None,
+                    "date": vid["date"],
+                })
+        record["recent_sponsors"] = sponsors
         return record
-    ===================================================================
-    """
-    api_key = os.environ.get("SCRAPE_CREATORS_API_KEY")
-    if not api_key:
-        raise RuntimeError(
-            "Live mode requested but SCRAPE_CREATORS_API_KEY is not set, and "
-            "the live API call has not been wired up yet. See _fetch_live in "
-            "src/scrape_client.py. Run without --live to use mock data."
-        )
-    raise NotImplementedError(
-        "The live Scrape Creators API call is not wired up yet. "
-        "Implement the marked section in _fetch_live in src/scrape_client.py."
-    )
+
+    except _CreatorLookupError as e:
+        return _live_error_record(handle, str(e))
+    except requests.RequestException as e:
+        return _live_error_record(handle, f"Network/API error: {e}")
+    except Exception as e:  # noqa: BLE001 - never let one creator kill the batch
+        return _live_error_record(handle, f"Unexpected error: {e}")
 
 
 def fetch_creator(handle, live=False):
     """Fetch a single creator by handle.
 
     Returns a record dict with keys: handle, name, platform, subscribers,
-    audience_geo, recent_sponsors, verified, source.
+    audience_geo, recent_sponsors, verified, source, error.
 
     In mock mode (default) returns clearly-labeled sample data. With
-    ``live=True`` it calls the real API (which you must wire up first).
+    ``live=True`` it calls the real Scrape Creators YouTube API.
     """
     if live:
         return _fetch_live(handle)
