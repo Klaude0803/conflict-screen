@@ -1,0 +1,1 @@
+"""Creator conflict screener package."""
