@@ -1,0 +1,3 @@
+openpyxl>=3.1,<4.0
+# requests is only needed when you wire up the live Scrape Creators API.
+requests>=2.28
