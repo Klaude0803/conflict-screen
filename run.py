@@ -77,6 +77,11 @@ def parse_args(argv=None):
         help="(market mode) Lookback window in months (default 12).",
     )
     p.add_argument(
+        "--min-confidence", choices=market_mod.CONFIDENCE_LEVELS, default="medium",
+        help="(market mode) Lowest sponsor confidence to count (default medium; "
+             "use low for the raw, unfiltered view).",
+    )
+    p.add_argument(
         "--min-subs", type=int, default=None,
         help="(source mode) Drop candidates below this subscriber count.",
     )
@@ -287,12 +292,19 @@ def run_market(args):
         records.append(record)
         print(f"  {handle}: {n} sponsor placement(s) found")
 
-    # 4. Aggregate into the ranked brand table.
-    rows = market_mod.aggregate_brands(records, args.months)
+    # 4. Aggregate into the ranked brand table (with the confidence filter).
+    rows, stats = market_mod.aggregate_brands(
+        records, args.months, min_confidence=args.min_confidence,
+    )
 
     print(f"\nScanned {len(records)} creator(s); {skipped} skipped (failed lookup).")
+    print(
+        f"Confidence filter (min={stats['min_confidence']}): dropped "
+        f"{stats['total']} sponsor mention(s) "
+        f"({stats['low_confidence']} below confidence, {stats['generic']} generic)."
+    )
     if not rows:
-        print("No sponsors found in the lookback window — nothing to rank.")
+        print("No sponsors left after filtering — nothing to rank.")
         # Still write an (empty) report so the run is reproducible.
         out_path = report_mod.write_market_report(rows, args.out)
         print(f"Wrote market map to: {out_path}")

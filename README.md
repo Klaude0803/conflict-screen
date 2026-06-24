@@ -115,8 +115,17 @@ Rows are color-coded green (maps to a known category) or amber (unmapped).
 | `--limit`              | Max creators to scan — default **15**.                     |
 | `--videos-per-creator` | Max recent uploads scanned per creator — default **10**.   |
 | `--months`             | Lookback window — default **12**.                          |
+| `--min-confidence`     | Lowest sponsor confidence to count: `low`/`medium`/`high` (default **medium**). |
 | `--out`                | Output XLSX path (default `market_report.xlsx`).           |
 | `--live`               | Use the live Scrape Creators API (default: mock).          |
+
+**Confidence filter:** the sponsors endpoint rates each detection
+`high`/`medium`/`low`. By default market mode counts only **medium and high**,
+and always drops obvious generic non-brand phrases ("any VPN provider", "any
+service provider", "needed", …). Pass `--min-confidence low` for the raw,
+unfiltered view. The filter only ever *drops* what the API returned — it never
+invents or relabels anything — and the run prints how many mentions were
+filtered (below-confidence vs generic) so the cleanup is visible.
 
 **Cost control (this is the heaviest job):** before any live calls it prints
 the exact planned spend — `creators × videos-per-creator` video-sponsor

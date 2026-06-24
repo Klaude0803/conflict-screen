@@ -80,8 +80,8 @@ _MOCK_CREATORS = {
         "subscribers": 1250000,
         "audience_geo": {"US": 48, "GB": 12, "CA": 9, "AU": 6, "DE": 8, "IN": 17},
         "recent_sponsors": [
-            {"name": "NordVPN", "category": "vpn", "months_ago": 3},
-            {"name": "Squarespace", "category": "website_builder", "months_ago": 7},
+            {"name": "NordVPN", "category": "vpn", "months_ago": 3, "confidence": "high"},
+            {"name": "Squarespace", "category": "website_builder", "months_ago": 7, "confidence": "medium"},
         ],
     },
     "gadgetguygreg": {
@@ -90,8 +90,8 @@ _MOCK_CREATORS = {
         "subscribers": 540000,
         "audience_geo": {"US": 22, "IN": 31, "BR": 18, "GB": 6, "CA": 3, "PH": 20},
         "recent_sponsors": [
-            {"name": "Squarespace", "category": "website_builder", "months_ago": 2},
-            {"name": "Honey", "category": "shopping", "months_ago": 5},
+            {"name": "Squarespace", "category": "website_builder", "months_ago": 2, "confidence": "high"},
+            {"name": "Honey", "category": "shopping", "months_ago": 5, "confidence": "low"},
         ],
     },
     "privacypaula": {
@@ -101,7 +101,7 @@ _MOCK_CREATORS = {
         "audience_geo": {"US": 55, "CA": 14, "GB": 11, "AU": 8, "DE": 12},
         "recent_sponsors": [
             # An old VPN deal, just outside the 12-month window.
-            {"name": "ExpressVPN", "category": "vpn", "months_ago": 15},
+            {"name": "ExpressVPN", "category": "vpn", "months_ago": 15, "confidence": "high"},
         ],
     },
     "lifestyleliam": {
@@ -110,7 +110,7 @@ _MOCK_CREATORS = {
         "subscribers": 89000,
         "audience_geo": {"US": 30, "GB": 9, "CA": 5, "AU": 4, "FR": 22, "ES": 30},
         "recent_sponsors": [
-            {"name": "HelloFresh", "category": "meal_kit", "months_ago": 4},
+            {"name": "HelloFresh", "category": "meal_kit", "months_ago": 4, "confidence": "medium"},
         ],
     },
     "newcreatornina": {
@@ -130,9 +130,11 @@ _MOCK_CREATORS = {
         "subscribers": 845000,
         "audience_geo": {},
         "recent_sponsors": [
-            {"name": "NordVPN", "category": "vpn", "months_ago": 1},
-            {"name": "Surfshark", "category": "vpn", "months_ago": 4},
-            {"name": "Squarespace", "category": "website_builder", "months_ago": 8},
+            {"name": "NordVPN", "category": "vpn", "months_ago": 1, "confidence": "high"},
+            {"name": "Surfshark", "category": "vpn", "months_ago": 4, "confidence": "medium"},
+            {"name": "Squarespace", "category": "website_builder", "months_ago": 8, "confidence": "high"},
+            # A generic, non-brand phrase the API sometimes emits -> dropped.
+            {"name": "any VPN provider", "category": "vpn", "months_ago": 1, "confidence": "medium"},
         ],
     },
     "securitysam": {
@@ -141,8 +143,8 @@ _MOCK_CREATORS = {
         "subscribers": 11500,
         "audience_geo": {},
         "recent_sponsors": [
-            {"name": "NordVPN", "category": "vpn", "months_ago": 2},
-            {"name": "ExpressVPN", "category": "vpn", "months_ago": 6},
+            {"name": "NordVPN", "category": "vpn", "months_ago": 2, "confidence": "high"},
+            {"name": "ExpressVPN", "category": "vpn", "months_ago": 6, "confidence": "medium"},
         ],
     },
     "streamguru": {
@@ -151,8 +153,8 @@ _MOCK_CREATORS = {
         "subscribers": 2400000,
         "audience_geo": {},
         "recent_sponsors": [
-            {"name": "Surfshark", "category": "vpn", "months_ago": 3},
-            {"name": "Squarespace", "category": "website_builder", "months_ago": 5},
+            {"name": "Surfshark", "category": "vpn", "months_ago": 3, "confidence": "high"},
+            {"name": "Squarespace", "category": "website_builder", "months_ago": 5, "confidence": "medium"},
         ],
     },
     "tinytechtom": {
@@ -161,8 +163,9 @@ _MOCK_CREATORS = {
         "subscribers": 4200,
         "audience_geo": {},
         "recent_sponsors": [
-            {"name": "NordVPN", "category": "vpn", "months_ago": 2},
-            {"name": "Notion", "category": None, "months_ago": 3},
+            {"name": "NordVPN", "category": "vpn", "months_ago": 2, "confidence": "high"},
+            # Low-confidence guess -> dropped at the default medium threshold.
+            {"name": "Notion", "category": None, "months_ago": 3, "confidence": "low"},
         ],
     },
 }
@@ -191,6 +194,7 @@ def _fetch_mock(handle, months=None):
             "name": s["name"],
             "category": s.get("category"),
             "date": _months_ago(s["months_ago"]),
+            "confidence": s.get("confidence"),
         })
     record["recent_sponsors"] = sponsors
     # Mock data is sample data, so it is NOT verified.
@@ -450,6 +454,9 @@ def _fetch_live(handle, months=None, max_videos=None):
                     # matches by name pattern, so we leave category empty.
                     "category": None,
                     "date": vid["date"],
+                    # Confidence as returned by the API (high/medium/low);
+                    # used by market mode's filter. Never relabeled.
+                    "confidence": s.get("confidence"),
                 })
         record["recent_sponsors"] = sponsors
         return record
