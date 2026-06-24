@@ -33,12 +33,13 @@ For each creator handle you give it, the tool:
 pip install -r requirements.txt
 ```
 
-## Two modes
+## Three modes
 
 - **Screen** (default) — screen a list of handles you already have.
 - **Source** (`--source`) — discover creators by topic, then screen them.
+- **Market** (`--market`) — map which brands sponsor creators in a niche.
 
-Both run in mock mode by default; add `--live` for the real API.
+All run in mock mode by default; add `--live` for the real API.
 
 ## Screen mode (mock — no API key)
 
@@ -89,6 +90,43 @@ the shortlist and run **screen mode `--live`** on it for full
 CONFLICT / CLEAR verdicts. As always, `audience_geo` is never invented, so
 **Leverage stays UNKNOWN** — Channel Country is the channel's stated country,
 not audience location.
+
+## Market mode — which brands are sponsoring a niche
+
+```bash
+python run.py --market --query "vpn review" --limit 15 --videos-per-creator 10 --out market.xlsx
+# or scan a list you already have:
+python run.py --market --creators data/creators_sample.csv --out market.xlsx
+```
+
+Gathers creators (search via `--query`, deduped, **or** a `--creators` CSV),
+pulls each one's recent uploads within `--months` and their sponsors, then
+aggregates everything into a ranked **brand-level** market map: brand, number
+of distinct creators running it, total placements, most recent placement date,
+the category it maps to in `config.py` (or `unmapped`), and up to 3 example
+creator handles. Sorted by distinct creators (desc), then total placements.
+Rows are color-coded green (maps to a known category) or amber (unmapped).
+
+| Flag                   | Description                                                  |
+|------------------------|--------------------------------------------------------------|
+| `--market`             | Enable market mode.                                         |
+| `--query`              | Topic to search creators for (or use `--creators`).        |
+| `--creators`           | CSV of handles to scan (or use `--query`).                 |
+| `--limit`              | Max creators to scan — default **15**.                     |
+| `--videos-per-creator` | Max recent uploads scanned per creator — default **10**.   |
+| `--months`             | Lookback window — default **12**.                          |
+| `--out`                | Output XLSX path (default `market_report.xlsx`).           |
+| `--live`               | Use the live Scrape Creators API (default: mock).          |
+
+**Cost control (this is the heaviest job):** before any live calls it prints
+the exact planned spend — `creators × videos-per-creator` video-sponsor
+lookups, plus the per-creator channel/uploads lookups and the search — and the
+`--limit` / `--videos-per-creator` caps bound it hard. A creator whose lookup
+fails is marked UNVERIFIED, counted in the skipped tally, and never crashes the
+batch. Only sponsors the API actually returned are counted; nothing is
+invented. Note the live `suspectedSponsors` field can be noisy (it sometimes
+returns generic phrases like "any VPN provider"); the map reflects exactly what
+the API returned.
 
 ## Input CSV
 

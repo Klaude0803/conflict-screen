@@ -70,43 +70,83 @@ def _columns(include_source):
     return cols
 
 
+def _render_sheet(ws, title, cols, rows, fill_for):
+    """Shared sheet renderer: dark frozen header, per-row fill, widths.
+
+    ``cols`` is a list of (header, getter, width, wrap). ``fill_for(row)``
+    returns a PatternFill (or None) used to color that row.
+    """
+    ws.title = title
+
+    header_font = Font(bold=True, color="FFFFFF")
+    header_fill = PatternFill("solid", fgColor="404040")
+    for col_idx, (header, _getter, _w, _wrap) in enumerate(cols, start=1):
+        cell = ws.cell(row=1, column=col_idx, value=header)
+        cell.font = header_font
+        cell.fill = header_fill
+        cell.alignment = Alignment(vertical="center", wrap_text=True)
+
+    for row in rows:
+        row_idx = ws.max_row + 1
+        for col_idx, (_header, getter, _w, wrap) in enumerate(cols, start=1):
+            cell = ws.cell(row=row_idx, column=col_idx, value=getter(row))
+            if wrap:
+                cell.alignment = Alignment(wrap_text=True, vertical="top")
+        fill = fill_for(row)
+        if fill:
+            for col_idx in range(1, len(cols) + 1):
+                ws.cell(row=row_idx, column=col_idx).fill = fill
+
+    ws.freeze_panes = "A2"
+    for col_idx, (_header, _getter, width, _wrap) in enumerate(cols, start=1):
+        ws.column_dimensions[get_column_letter(col_idx)].width = width
+
+
 def write_report(results, out_path, include_source_columns=False):
     """Write screened results to an XLSX file at out_path.
 
     Set ``include_source_columns=True`` for source mode to add the Search
     Query and Channel Country columns.
     """
-    cols = _columns(include_source_columns)
     wb = Workbook()
-    ws = wb.active
-    ws.title = "Creator Sourcing" if include_source_columns else "Conflict Screen"
+    _render_sheet(
+        wb.active,
+        "Creator Sourcing" if include_source_columns else "Conflict Screen",
+        _columns(include_source_columns),
+        results,
+        fill_for=lambda r: _FILLS.get(r.get("status")),
+    )
+    wb.save(out_path)
+    return out_path
 
-    header_font = Font(bold=True, color="FFFFFF")
-    header_fill = PatternFill("solid", fgColor="404040")
-    for col_idx, (title, _getter, _w, _wrap) in enumerate(cols, start=1):
-        cell = ws.cell(row=1, column=col_idx, value=title)
-        cell.font = header_font
-        cell.fill = header_fill
-        cell.alignment = Alignment(vertical="center", wrap_text=True)
 
-    for r in results:
-        row_idx = ws.max_row + 1
-        for col_idx, (_title, getter, _w, wrap) in enumerate(cols, start=1):
-            cell = ws.cell(row=row_idx, column=col_idx, value=getter(r))
-            if wrap:
-                cell.alignment = Alignment(wrap_text=True, vertical="top")
-        # Color the whole row by conflict status.
-        fill = _FILLS.get(r.get("status"))
-        if fill:
-            for col_idx in range(1, len(cols) + 1):
-                ws.cell(row=row_idx, column=col_idx).fill = fill
+# Market-map coloring: green when the brand maps to a known category, amber
+# when it's unmapped — reusing the existing CLEAR/UNVERIFIED palette.
+_MARKET_MAPPED_FILL = _FILLS[conflict_mod.CLEAR]
+_MARKET_UNMAPPED_FILL = _FILLS[conflict_mod.UNVERIFIED]
 
-    # Freeze the header row.
-    ws.freeze_panes = "A2"
+_MARKET_COLUMNS = [
+    ("Brand", lambda r: r.get("brand"), 26, False),
+    ("Distinct creators", lambda r: r.get("distinct_creators"), 16, False),
+    ("Total placements", lambda r: r.get("total_placements"), 16, False),
+    ("Most recent placement", lambda r: r.get("most_recent_date") or "", 20, False),
+    ("Category", lambda r: r.get("category") or "unmapped", 16, False),
+    ("Example creators (up to 3)", lambda r: r.get("example_handles") or "", 40, True),
+]
 
-    # Column widths.
-    for col_idx, (_title, _getter, width, _wrap) in enumerate(cols, start=1):
-        ws.column_dimensions[get_column_letter(col_idx)].width = width
 
+def write_market_report(rows, out_path):
+    """Write the ranked brand market-map to an XLSX file at out_path."""
+    wb = Workbook()
+    _render_sheet(
+        wb.active,
+        "Market Map",
+        _MARKET_COLUMNS,
+        rows,
+        fill_for=lambda r: (
+            _MARKET_UNMAPPED_FILL if r.get("category") in (None, "unmapped")
+            else _MARKET_MAPPED_FILL
+        ),
+    )
     wb.save(out_path)
     return out_path

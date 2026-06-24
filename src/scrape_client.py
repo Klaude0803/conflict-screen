@@ -122,10 +122,53 @@ _MOCK_CREATORS = {
         "audience_geo": {},
         "recent_sponsors": [],
     },
+    # VPN-niche sample creators (handles match the source-mode mock channels)
+    # so market mode's --query path produces a meaningful brand map in mock.
+    "vpnvinny": {
+        "name": "VPN Vinny (SAMPLE)",
+        "platform": "YouTube",
+        "subscribers": 845000,
+        "audience_geo": {},
+        "recent_sponsors": [
+            {"name": "NordVPN", "category": "vpn", "months_ago": 1},
+            {"name": "Surfshark", "category": "vpn", "months_ago": 4},
+            {"name": "Squarespace", "category": "website_builder", "months_ago": 8},
+        ],
+    },
+    "securitysam": {
+        "name": "Security Sam (SAMPLE)",
+        "platform": "YouTube",
+        "subscribers": 11500,
+        "audience_geo": {},
+        "recent_sponsors": [
+            {"name": "NordVPN", "category": "vpn", "months_ago": 2},
+            {"name": "ExpressVPN", "category": "vpn", "months_ago": 6},
+        ],
+    },
+    "streamguru": {
+        "name": "Stream Guru (SAMPLE)",
+        "platform": "YouTube",
+        "subscribers": 2400000,
+        "audience_geo": {},
+        "recent_sponsors": [
+            {"name": "Surfshark", "category": "vpn", "months_ago": 3},
+            {"name": "Squarespace", "category": "website_builder", "months_ago": 5},
+        ],
+    },
+    "tinytechtom": {
+        "name": "Tiny Tech Tom (SAMPLE)",
+        "platform": "YouTube",
+        "subscribers": 4200,
+        "audience_geo": {},
+        "recent_sponsors": [
+            {"name": "NordVPN", "category": "vpn", "months_ago": 2},
+            {"name": "Notion", "category": None, "months_ago": 3},
+        ],
+    },
 }
 
 
-def _fetch_mock(handle):
+def _fetch_mock(handle, months=None):
     record = _empty_record(handle)
     record["source"] = "MOCK (sample data — not real)"
     data = _MOCK_CREATORS.get(handle.strip().lower().lstrip("@"))
@@ -140,6 +183,10 @@ def _fetch_mock(handle):
     record["audience_geo"] = dict(data.get("audience_geo") or {})
     sponsors = []
     for s in data.get("recent_sponsors") or []:
+        # When a lookback is given (market mode), drop out-of-window sponsors
+        # so mock mirrors live (which only returns in-window placements).
+        if months is not None and s["months_ago"] > months:
+            continue
         sponsors.append({
             "name": s["name"],
             "category": s.get("category"),
@@ -338,10 +385,17 @@ def _map_channel_basic(handle, channel):
     return record
 
 
-def _fetch_live(handle):
-    """Full screen-mode fetch: channel -> videos -> sponsors."""
+def _fetch_live(handle, months=None, max_videos=None):
+    """Full fetch: channel -> recent uploads -> sponsors.
+
+    ``months`` overrides the lookback window (defaults to config value).
+    ``max_videos`` caps how many in-window uploads we pull sponsors for
+    (defaults to _MAX_SPONSOR_LOOKUPS). Both let market mode bound spend.
+    """
     api_key = _require_api_key()
     clean_handle = handle.strip().lstrip("@")
+    months = config.LOOKBACK_MONTHS if months is None else months
+    max_videos = _MAX_SPONSOR_LOOKUPS if max_videos is None else max_videos
 
     def _inner():
         # --- 1. Channel details -------------------------------------------
@@ -350,7 +404,7 @@ def _fetch_live(handle):
         channel_id = channel.get("channelId")
 
         # --- 2. Recent uploads inside the lookback window -----------------
-        cutoff = datetime.utcnow() - timedelta(days=30 * config.LOOKBACK_MONTHS)
+        cutoff = datetime.utcnow() - timedelta(days=30 * months)
         in_window = []  # list of {"url", "date"} for videos within the window
         token = None
         for _ in range(_MAX_VIDEO_PAGES):
@@ -377,12 +431,14 @@ def _fetch_live(handle):
                     })
 
             token = page.get("continuationToken")
-            if reached_old or not token or not videos:
+            # Stop paging once we already have enough in-window uploads to
+            # cover the sponsor cap — no point fetching more pages.
+            if reached_old or len(in_window) >= max_videos or not token or not videos:
                 break
 
         # --- 3. Sponsors for each in-window upload ------------------------
         sponsors = []
-        for vid in in_window[:_MAX_SPONSOR_LOOKUPS]:
+        for vid in in_window[:max_videos]:
             data = _api_get("/v1/youtube/video/sponsors", {"url": vid["url"]}, api_key)
             for s in data.get("suspectedSponsors") or []:
                 name = s.get("name")
@@ -456,18 +512,20 @@ def _search_channels_live(query, limit):
     return candidates
 
 
-def fetch_creator(handle, live=False):
-    """Full creator fetch for SCREEN mode (channel + videos + sponsors).
+def fetch_creator(handle, live=False, months=None, max_videos=None):
+    """Full creator fetch (channel + recent uploads + sponsors).
 
     Returns a record dict with keys: handle, name, platform, subscribers,
     audience_geo, recent_sponsors, verified, source, error, channel_country.
 
-    In mock mode (default) returns clearly-labeled sample data. With
-    ``live=True`` it calls the real Scrape Creators YouTube API.
+    ``months`` overrides the lookback window and ``max_videos`` caps how many
+    in-window uploads are checked for sponsors (used by market mode for cost
+    control). In mock mode (default) returns clearly-labeled sample data;
+    with ``live=True`` it calls the real Scrape Creators YouTube API.
     """
     if live:
-        return _fetch_live(handle)
-    return _fetch_mock(handle)
+        return _fetch_live(handle, months=months, max_videos=max_videos)
+    return _fetch_mock(handle, months=months)
 
 
 def fetch_channel_profile(handle, live=False):

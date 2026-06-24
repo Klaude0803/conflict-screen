@@ -82,3 +82,27 @@ def category_for_brand(brand):
 def competitor_patterns_for_category(category):
     """Return the list of competitor patterns for a category (may be empty)."""
     return COMPETITOR_PATTERNS.get(category, [])
+
+
+def category_for_sponsor(name):
+    """Map a sponsor/brand name to a category, or None if we don't know it.
+
+    Tries an exact brand-map hit first, then case-insensitive substring
+    matching against the competitor patterns. Returns None ("unmapped") when
+    nothing matches — we never guess a category.
+    """
+    if not name:
+        return None
+    lowered = name.strip().lower()
+
+    # Exact brand-map hit (e.g. "NordVPN" -> vpn).
+    direct = BRAND_CATEGORY.get(lowered)
+    if direct:
+        return direct
+
+    # Otherwise look for a competitor pattern contained in the name.
+    for category, patterns in COMPETITOR_PATTERNS.items():
+        if any(p in lowered for p in patterns):
+            return category
+    return None
+

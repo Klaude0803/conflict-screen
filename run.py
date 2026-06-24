@@ -20,6 +20,7 @@ import csv
 import sys
 from collections import Counter
 
+from src import market as market_mod
 from src import report as report_mod
 from src import screen as screen_mod
 from src import scrape_client
@@ -47,18 +48,33 @@ def parse_args(argv=None):
         description="Screen creators against a target brand, or source new "
         "ones by topic, with conflict / geo-leverage / negotiation notes."
     )
-    p.add_argument("--brand", required=True, help="Target brand name (e.g. CyberGhost).")
+    p.add_argument(
+        "--brand",
+        help="Target brand name, e.g. CyberGhost (required for screen/source modes).",
+    )
     p.add_argument(
         "--source", action="store_true",
         help="Source mode: discover creators by --query instead of reading a CSV.",
     )
     p.add_argument(
+        "--market", action="store_true",
+        help="Market mode: map which brands sponsor creators in a niche.",
+    )
+    p.add_argument(
         "--creators",
-        help="(screen mode) Path to a CSV with a 'handle' column.",
+        help="(screen/market mode) Path to a CSV with a 'handle' column.",
     )
     p.add_argument(
         "--query",
-        help="(source mode) Topic keyword to search YouTube channels for.",
+        help="(source/market mode) Topic keyword to search YouTube channels for.",
+    )
+    p.add_argument(
+        "--videos-per-creator", type=int, default=10,
+        help="(market mode) Max recent uploads to scan per creator (default 10).",
+    )
+    p.add_argument(
+        "--months", type=int, default=12,
+        help="(market mode) Lookback window in months (default 12).",
     )
     p.add_argument(
         "--min-subs", type=int, default=None,
@@ -82,14 +98,30 @@ def parse_args(argv=None):
     )
     args = p.parse_args(argv)
 
-    if args.source:
+    if args.source and args.market:
+        p.error("choose one mode: --source or --market, not both.")
+
+    if args.market:
+        if not (args.query or args.creators):
+            p.error("--market requires --query or --creators.")
+    elif args.source:
+        if not args.brand:
+            p.error("--source requires --brand.")
         if not args.query:
             p.error("--source requires --query (the topic keyword to search).")
     else:
+        if not args.brand:
+            p.error("screen mode requires --brand.")
         if not args.creators:
-            p.error("screen mode requires --creators (or pass --source).")
+            p.error("screen mode requires --creators (or pass --source/--market).")
+
     if args.out is None:
-        args.out = "sourced_report.xlsx" if args.source else "conflict_report.xlsx"
+        if args.market:
+            args.out = "market_report.xlsx"
+        elif args.source:
+            args.out = "sourced_report.xlsx"
+        else:
+            args.out = "conflict_report.xlsx"
     return args
 
 
@@ -199,8 +231,88 @@ def run_source(args):
     return 0
 
 
+def _gather_handles(args):
+    """Get the creator handles to scan (from --query search or --creators CSV).
+
+    Returns (handles, used_search) where used_search marks whether a live
+    search request was spent during gathering.
+    """
+    if args.query:
+        candidates = scrape_client.search_channels(args.query, args.limit, live=args.live)
+        return [c["handle"] for c in candidates], True
+    handles = read_handles(args.creators)[:args.limit]
+    return handles, False
+
+
+def run_market(args):
+    """Market mode: map which brands sponsor creators across a niche."""
+    mode = "LIVE" if args.live else "MOCK (sample data)"
+    source_desc = f"query {args.query!r}" if args.query else f"CSV {args.creators}"
+    print(f"Market map for brand niche via {source_desc}")
+    print(f"Mode: {mode}")
+    print(f"Caps — creators: {args.limit}, videos/creator: {args.videos_per_creator}, "
+          f"lookback: {args.months}mo\n")
+
+    # 1. Gather creators (deduped by search, or from the CSV), capped at limit.
+    handles, used_search = _gather_handles(args)
+    print(f"Gathered {len(handles)} creator(s) to scan (capped at {args.limit}).")
+
+    # 2. Cost control: show the exact planned spend BEFORE the heavy calls.
+    planned_sponsor_lookups = len(handles) * args.videos_per_creator
+    if args.live:
+        search_note = "1 search (already spent)" if used_search else "no search"
+        print(
+            "Planned live spend: "
+            f"{len(handles)} creators x {args.videos_per_creator} videos = "
+            f"{planned_sponsor_lookups} video-sponsor lookups, plus {len(handles)} "
+            f"channel + channel-videos lookups, plus {search_note}.\n"
+        )
+    else:
+        print()
+
+    # 3. Pull each creator's recent uploads + sponsors (bounded by the caps).
+    records = []
+    skipped = 0
+    for handle in handles:
+        record = scrape_client.fetch_creator(
+            handle, live=args.live,
+            months=args.months, max_videos=args.videos_per_creator,
+        )
+        if record.get("error"):
+            # Failed lookup -> UNVERIFIED, count as skipped, keep going.
+            skipped += 1
+            print(f"  {handle}: UNVERIFIED (skipped) — {record['error']}")
+            continue
+        n = len(record.get("recent_sponsors") or [])
+        records.append(record)
+        print(f"  {handle}: {n} sponsor placement(s) found")
+
+    # 4. Aggregate into the ranked brand table.
+    rows = market_mod.aggregate_brands(records, args.months)
+
+    print(f"\nScanned {len(records)} creator(s); {skipped} skipped (failed lookup).")
+    if not rows:
+        print("No sponsors found in the lookback window — nothing to rank.")
+        # Still write an (empty) report so the run is reproducible.
+        out_path = report_mod.write_market_report(rows, args.out)
+        print(f"Wrote market map to: {out_path}")
+        return 0
+
+    print(f"\nRanked brands ({len(rows)}):")
+    print(f"  {'BRAND':<24} {'CREATORS':>8} {'PLACEMENTS':>10} {'CATEGORY':<16} RECENT")
+    for r in rows:
+        print(f"  {r['brand']:<24} {r['distinct_creators']:>8} "
+              f"{r['total_placements']:>10} {r['category']:<16} {r['most_recent_date']}")
+
+    out_path = report_mod.write_market_report(rows, args.out)
+    print(f"\nWrote color-coded market map to: {out_path}")
+    return 0
+
+
 def main(argv=None):
     args = parse_args(argv)
+    if args.market:
+        return run_market(args)
     if args.source:
         return run_source(args)
     return run_screen(args)
