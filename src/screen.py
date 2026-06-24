@@ -45,6 +45,7 @@ def screen_creator(record, brand):
         "subscribers": record.get("subscribers"),
         "verified": record.get("verified", False),
         "source": record.get("source"),
+        "channel_country": record.get("channel_country"),
         "status": conflict_result["status"],
         "category": conflict_result["category"],
         "conflict_reason": conflict_result["reason"],

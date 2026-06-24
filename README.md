@@ -33,13 +33,18 @@ For each creator handle you give it, the tool:
 pip install -r requirements.txt
 ```
 
-## Run (mock mode — no API key)
+## Two modes
+
+- **Screen** (default) — screen a list of handles you already have.
+- **Source** (`--source`) — discover creators by topic, then screen them.
+
+Both run in mock mode by default; add `--live` for the real API.
+
+## Screen mode (mock — no API key)
 
 ```bash
 python run.py --brand CyberGhost --creators data/creators_sample.csv --out report.xlsx
 ```
-
-### Options
 
 | Flag          | Description                                          |
 |---------------|------------------------------------------------------|
@@ -47,6 +52,43 @@ python run.py --brand CyberGhost --creators data/creators_sample.csv --out repor
 | `--creators`  | Path to a CSV with a `handle` column (required).     |
 | `--out`       | Output XLSX path (default `conflict_report.xlsx`).   |
 | `--live`      | Use the live Scrape Creators API (default: mock).    |
+
+## Source mode — find creators to spec
+
+```bash
+python run.py --source --brand CyberGhost --query "vpn review" --limit 20 --out sourced.xlsx
+```
+
+It searches YouTube channels for `--query`, dedupes them, and for each
+candidate (up to `--limit`) pulls channel details — name, subscriber count,
+and the channel's **own stated country** — then runs the **same** conflict
+screen against `--brand`. Output is the same color-coded XLSX plus a
+**Search Query** column and a **Channel Country (stated, not audience)**
+column.
+
+| Flag          | Description                                                       |
+|---------------|------------------------------------------------------------------|
+| `--source`    | Enable source mode.                                              |
+| `--brand`     | Target brand name (required).                                    |
+| `--query`     | Topic keyword to search channels for (required).                |
+| `--min-subs`  | Drop candidates below this subscriber count (optional).         |
+| `--max-subs`  | Drop candidates above this subscriber count (optional).         |
+| `--limit`     | Max candidates to screen — default **20**, controls spend.       |
+| `--out`       | Output XLSX path (default `sourced_report.xlsx`).               |
+| `--live`      | Use the live Scrape Creators API (default: mock).               |
+
+**Cost control:** source mode makes exactly **one channel lookup per
+candidate**, and in `--live` mode it prints how many lookups it's about to
+make before spending. Candidates outside the `--min-subs`/`--max-subs` range
+are dropped (candidates whose count is unknown stay visible).
+
+**Source mode is a cheap discovery pass:** it pulls channel identity + country
+but does **not** fetch each candidate's full sponsor history, so the conflict
+screen reports them **UNVERIFIED** (no confirmed sponsorships to judge). Take
+the shortlist and run **screen mode `--live`** on it for full
+CONFLICT / CLEAR verdicts. As always, `audience_geo` is never invented, so
+**Leverage stays UNKNOWN** — Channel Country is the channel's stated country,
+not audience location.
 
 ## Input CSV
 
