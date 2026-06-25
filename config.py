@@ -178,7 +178,7 @@ BRIEF_CATEGORY_BRANDS = {
         "red bull", "redbull", "monster energy", "monster", "prime hydration",
         "prime energy", "gatorade", "powerade", "lucozade", "celsius",
         "ghost energy", "myprotein", "huel", "athletic greens", "ag1",
-        "liquid iv", "liquid i.v", "applied nutrition", "grenade", "sis ",
+        "liquid iv", "liquid i.v", "applied nutrition", "grenade",
         "science in sport",
     ],
     "sports/mobile gaming": [
@@ -190,7 +190,7 @@ BRIEF_CATEGORY_BRANDS = {
     "streaming": [
         "dazn", "prime video", "amazon prime", "netflix", "disney+", "disney plus",
         "paramount+", "peacock", "fubo", "sling tv", "apple tv", "hulu", "hbo max",
-        "max ", "tnt sports", "viaplay",
+        "tnt sports", "viaplay",
     ],
     "men's grooming/DTC": [
         "manscaped", "dollar shave club", "harry's", "harrys", "gillette",
@@ -246,13 +246,25 @@ def gambling_borderline_reason(name):
     return None
 
 
+import re as _re
+
+
+def _pattern_matches(pattern, text):
+    """Word-boundary match so short patterns ('ee', 'o2', 'max') only fire on
+    a standalone token, never inside another word ('free', 'maximum')."""
+    pattern = pattern.strip()
+    if not pattern:
+        return False
+    return _re.search(r"(?<!\w)" + _re.escape(pattern) + r"(?!\w)", text) is not None
+
+
 def brief_category_for(name):
     """Map a brand name to one brief category, or 'uncategorized (brief)'."""
     if not name:
         return "uncategorized (brief)"
     lowered = name.strip().lower()
     for category, patterns in BRIEF_CATEGORY_BRANDS.items():
-        if any(p.strip() in lowered for p in patterns):
+        if any(_pattern_matches(p, lowered) for p in patterns):
             return category
     return "uncategorized (brief)"
 
@@ -261,8 +273,8 @@ def known_brands_in_text(text):
     """Return the brief-lexicon brand display patterns found in a caption.
 
     Used for conservative short-form extraction: we only name a brand inside a
-    paid-partnership post when a known brand pattern actually appears. Returns
-    a list of (matched_pattern, brief_category).
+    paid-partnership post when a known brand pattern actually appears as a
+    standalone token (word-boundary matched). Returns (pattern, brief_category).
     """
     if not text:
         return []
@@ -270,6 +282,6 @@ def known_brands_in_text(text):
     hits = []
     for category, patterns in BRIEF_CATEGORY_BRANDS.items():
         for p in patterns:
-            if p.strip() and p.strip() in lowered:
+            if _pattern_matches(p, lowered):
                 hits.append((p.strip(), category))
     return hits
