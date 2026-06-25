@@ -40,6 +40,58 @@ def _is_generic(name):
     return lowered.startswith("any ")
 
 
+# Common suffixes a channel tacks onto its own name; stripped before matching
+# so "Tom Spark's Reviews" still matches a "Tomspark" self-mention.
+_SELF_REF_SUFFIXES = ("reviews", "review", "official", "channel", "tube", "tv", "yt", "hd")
+_MIN_TOKEN_LEN = 4  # guard against tiny fragments causing false matches
+
+
+def _strip_self_ref_suffix(norm):
+    for suffix in _SELF_REF_SUFFIXES:
+        if norm.endswith(suffix) and len(norm) - len(suffix) >= _MIN_TOKEN_LEN:
+            return norm[: -len(suffix)]
+    return norm
+
+
+def _channel_tokens(record):
+    """Normalized identifiers for a creator's own channel name and handle."""
+    tokens = set()
+    for raw in (record.get("name"), record.get("handle")):
+        if not raw:
+            continue
+        norm = _norm_key(raw)
+        if len(norm) >= _MIN_TOKEN_LEN:
+            tokens.add(norm)
+            stripped = _strip_self_ref_suffix(norm)
+            if len(stripped) >= _MIN_TOKEN_LEN:
+                tokens.add(stripped)
+    return tokens
+
+
+def _is_self_reference(sponsor_name, channel_tokens):
+    """True when a sponsor name is essentially the creator's own channel.
+
+    Matches case-insensitively, ignoring spaces/punctuation and common
+    suffixes, when the sponsor equals, contains, or is contained by a channel
+    token (the creator self-referencing, not a real brand).
+    """
+    if not channel_tokens:
+        return False
+    candidates = {_norm_key(sponsor_name)}
+    candidates.add(_strip_self_ref_suffix(next(iter(candidates))))
+    for token in channel_tokens:
+        for cand in candidates:
+            if not cand:
+                continue
+            if cand == token:
+                return True
+            if len(token) >= _MIN_TOKEN_LEN and token in cand:
+                return True
+            if len(cand) >= _MIN_TOKEN_LEN and cand in token:
+                return True
+    return False
+
+
 def _norm_key(name):
     """Normalize a brand name for grouping: lowercase, alphanumeric only.
 
@@ -80,9 +132,11 @@ def aggregate_brands(records, months, min_confidence="medium"):
     brands = {}  # norm key -> aggregation dict
     dropped_low = 0
     dropped_generic = 0
+    dropped_self = 0
 
     for record in records:
         handle = record.get("handle")
+        channel_tokens = _channel_tokens(record)
         for sponsor in record.get("recent_sponsors") or []:
             name = (sponsor.get("name") or "").strip()
             if not name:
@@ -94,6 +148,10 @@ def aggregate_brands(records, months, min_confidence="medium"):
             # Drop obvious non-brand phrases.
             if _is_generic(name):
                 dropped_generic += 1
+                continue
+            # Drop the creator self-referencing its own channel name/handle.
+            if _is_self_reference(name, channel_tokens):
+                dropped_self += 1
                 continue
             # Drop anything rated below the confidence threshold.
             if _confidence_rank(sponsor.get("confidence")) < min_rank:
@@ -144,7 +202,8 @@ def aggregate_brands(records, months, min_confidence="medium"):
     stats = {
         "low_confidence": dropped_low,
         "generic": dropped_generic,
-        "total": dropped_low + dropped_generic,
+        "self_reference": dropped_self,
+        "total": dropped_low + dropped_generic + dropped_self,
         "min_confidence": (min_confidence or "medium").lower(),
     }
     return rows, stats

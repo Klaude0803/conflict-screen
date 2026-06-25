@@ -299,9 +299,10 @@ def run_market(args):
 
     print(f"\nScanned {len(records)} creator(s); {skipped} skipped (failed lookup).")
     print(
-        f"Confidence filter (min={stats['min_confidence']}): dropped "
+        f"Filter (min-confidence={stats['min_confidence']}): dropped "
         f"{stats['total']} sponsor mention(s) "
-        f"({stats['low_confidence']} below confidence, {stats['generic']} generic)."
+        f"({stats['low_confidence']} below confidence, {stats['generic']} generic, "
+        f"{stats['self_reference']} channel self-reference)."
     )
     if not rows:
         print("No sponsors left after filtering — nothing to rank.")

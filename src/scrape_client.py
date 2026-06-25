@@ -155,6 +155,8 @@ _MOCK_CREATORS = {
         "recent_sponsors": [
             {"name": "Surfshark", "category": "vpn", "months_ago": 3, "confidence": "high"},
             {"name": "Squarespace", "category": "website_builder", "months_ago": 5, "confidence": "medium"},
+            # The creator self-referencing its own channel -> dropped.
+            {"name": "Stream Guru", "category": None, "months_ago": 2, "confidence": "high"},
         ],
     },
     "tinytechtom": {

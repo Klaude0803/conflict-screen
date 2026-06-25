@@ -119,13 +119,21 @@ Rows are color-coded green (maps to a known category) or amber (unmapped).
 | `--out`                | Output XLSX path (default `market_report.xlsx`).           |
 | `--live`               | Use the live Scrape Creators API (default: mock).          |
 
-**Confidence filter:** the sponsors endpoint rates each detection
+**Noise filter:** the sponsors endpoint rates each detection
 `high`/`medium`/`low`. By default market mode counts only **medium and high**,
-and always drops obvious generic non-brand phrases ("any VPN provider", "any
-service provider", "needed", …). Pass `--min-confidence low` for the raw,
-unfiltered view. The filter only ever *drops* what the API returned — it never
-invents or relabels anything — and the run prints how many mentions were
-filtered (below-confidence vs generic) so the cleanup is visible.
+and always drops:
+
+- obvious generic non-brand phrases ("any VPN provider", "any service
+  provider", "needed", …); and
+- **channel self-references** — a sponsor name that is essentially the
+  creator's own channel name or handle (case-insensitive, ignoring spaces and
+  common suffixes like "reviews"), i.e. the creator self-referencing rather
+  than a real brand.
+
+Pass `--min-confidence low` for the raw, unfiltered view. The filter only ever
+*drops* what the API returned — it never invents or relabels anything — and the
+run prints how many mentions were filtered (below-confidence vs generic vs
+self-reference) so the cleanup stays visible.
 
 **Cost control (this is the heaviest job):** before any live calls it prints
 the exact planned spend — `creators × videos-per-creator` video-sponsor
