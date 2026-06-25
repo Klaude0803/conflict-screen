@@ -162,18 +162,45 @@ three curiosity-driven subject lines (each under 60 characters) and one email
 body of 75 to 110 words that opens with specific insider knowledge of what the
 brand is doing with creators in the niche (using the example creators as proof),
 makes the warm-by-proxy point, and ends with exactly one call to action. No
-ASCII hyphens appear anywhere in the subjects or body (em dashes are fine); the
+ASCII hyphens appear anywhere in the subjects or body (em dashes are fine);
+creators are named in plain text (TomSparkReviews, never @TomSparkReviews); the
 tone is a calm senior operator, not a vendor chasing a close.
+
+Add `--sequence` to draft a full **six-touch follow-up sequence** instead of a
+single email:
+
+```bash
+python run.py --sequence --brand ExpressVPN --category vpn \
+    --creators "TomSparkReviews,VPN Reviews" --out sequence_expressvpn.txt
+```
+
+Each touch is a separate labeled block with its send timing, subject, and a
+one-line "what is new" note:
+
+| Touch | Timing | Purpose |
+|-------|--------|---------|
+| 1 | Day 0 | Opener: relevance + one CTA (75 to 110 words). **Spicy** subject. |
+| 2 | Day 3 to 4 | One new audience insight. In thread. |
+| 3 | Day 5 to 7 | A different frame (activation concept). In thread. |
+| 4 | Day 7 to 10 | Reduce friction: routing / yes-or-no. Short. In thread. |
+| 5 | Day 7 to 10 after touch 4 | Final value add: a lightweight asset. In thread. |
+| 6 | Day 14 to 21 from touch 1 | The breakup: easy referral or opt out. In thread. |
+
+Touch 1 gets the spicy curiosity subject; touches 2 to 6 reply in thread under
+a plain `re: ...` subject (clarity beats cleverness on follow-ups). Every touch
+leads with something genuinely new (never "just checking in" or "bumping this"),
+carries exactly one CTA, and avoids fake urgency or invented scarcity.
 
 | Flag           | Description                                                        |
 |----------------|--------------------------------------------------------------------|
-| `--draft`      | Enable draft mode.                                                 |
+| `--draft`      | Enable draft mode (single email).                                 |
+| `--sequence`   | Draft the six-touch follow-up sequence instead.                   |
 | `--brand`      | Brand to write to (required).                                     |
 | `--category`   | Brand category (from the market radar).                           |
 | `--recent`     | Most recent placement date (from the market radar).               |
-| `--creators`   | Comma-separated example handles already running the brand.        |
+| `--creators`   | Comma-separated example creators already running the brand.       |
 | `--market-csv` | Optional market-radar CSV to auto-pull the brand's row.           |
-| `--out`        | Output text path (default `draft_<brand>.txt`).                   |
+| `--out`        | Output text path (default `draft_<brand>.txt` / `sequence_<brand>.txt`). |
 
 > **DRAFTS ONLY.** This mode never sends anything and has no email/sending
 > integration. It writes a local file for you to review and send manually.

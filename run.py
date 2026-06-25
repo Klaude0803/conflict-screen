@@ -66,6 +66,11 @@ def parse_args(argv=None):
         help="Draft mode: write a cold-email DRAFT to a brand (never sends).",
     )
     p.add_argument(
+        "--sequence", action="store_true",
+        help="(draft mode) Write a six-touch follow-up sequence DRAFT instead "
+             "of a single email.",
+    )
+    p.add_argument(
         "--creators",
         help="(screen/market) CSV path with a 'handle' column; "
              "(draft) comma-separated example handles for the brand.",
@@ -121,6 +126,10 @@ def parse_args(argv=None):
     )
     args = p.parse_args(argv)
 
+    # --sequence is a draft-mode variant; enable draft mode if it's passed.
+    if args.sequence:
+        args.draft = True
+
     if sum(bool(m) for m in (args.source, args.market, args.draft)) > 1:
         p.error("choose one mode: --source, --market, or --draft.")
 
@@ -144,7 +153,7 @@ def parse_args(argv=None):
     if args.out is None:
         if args.draft:
             slug = "".join(c for c in args.brand.lower() if c.isalnum()) or "brand"
-            args.out = f"draft_{slug}.txt"
+            args.out = f"sequence_{slug}.txt" if args.sequence else f"draft_{slug}.txt"
         elif args.market:
             args.out = "market_report.xlsx"
         elif args.source:
@@ -413,18 +422,28 @@ def run_draft(args):
         used_sample = True
         print("No row details supplied; using the built-in SAMPLE brand row.")
 
-    draft = outreach_mod.build_draft(
-        args.brand, category=category, recent=recent, creators=creators,
-    )
-    out_path = outreach_mod.write_draft(
-        draft, args.out, category=category, recent=recent, creators=creators,
-    )
-
-    # Echo the draft to the console too.
-    print()
-    print(outreach_mod.render_draft_text(
-        draft, category=category, recent=recent, creators=creators,
-    ))
+    if args.sequence:
+        seq = outreach_mod.build_sequence(
+            args.brand, category=category, recent=recent, creators=creators,
+        )
+        out_path = outreach_mod.write_sequence(
+            seq, args.out, category=category, recent=recent, creators=creators,
+        )
+        print()
+        print(outreach_mod.render_sequence_text(
+            seq, category=category, recent=recent, creators=creators,
+        ))
+    else:
+        draft = outreach_mod.build_draft(
+            args.brand, category=category, recent=recent, creators=creators,
+        )
+        out_path = outreach_mod.write_draft(
+            draft, args.out, category=category, recent=recent, creators=creators,
+        )
+        print()
+        print(outreach_mod.render_draft_text(
+            draft, category=category, recent=recent, creators=creators,
+        ))
     if used_sample:
         print("\n(Generated from SAMPLE data.)")
     print(f"\nWrote DRAFT to: {out_path}  (review before sending — not sent)")
