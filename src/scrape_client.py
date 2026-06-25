@@ -556,3 +556,275 @@ def search_channels(query, limit, live=False):
     if live:
         return _search_channels_live(query, limit)
     return _search_channels_mock(query, limit)
+
+
+# ===========================================================================
+# SHORT FORM: Instagram (fully wired) and TikTok (wired defensively).
+#
+# Confirmed from the docs + live checks:
+#   IG  /v1/instagram/search/profiles?query=   -> profiles[] (discovery)
+#   IG  /v2/instagram/user/posts?handle=        -> items[] with taken_at (unix),
+#                                                  caption.text, is_paid_partnership
+#   TT  /v1/tiktok/search/users?query=          -> users[] (often empty)
+#   TT  /v1/tiktok/profile?handle=              -> itemList[] (often EMPTY)
+#
+# Neither platform returns a sponsor-brand-NAME field — only an is_paid_partnership
+# flag. So short form is conservative: a brand is named ONLY when a post is
+# flagged is_paid_partnership AND a known brand from config's lexicon appears in
+# the caption. A hashtag alone is never enough. Everything else stays UNVERIFIED.
+# TikTok's per-creator feed came back empty in live checks, so it yields little;
+# we wire it per the docs rather than fabricate data.
+# ===========================================================================
+SHORT_FORM_MAX_PAGES = 5  # post pages to scan per creator before stopping
+
+
+def _unix_to_date(ts):
+    try:
+        return datetime.utcfromtimestamp(int(ts)).strftime("%Y-%m-%d")
+    except (ValueError, TypeError, OSError):
+        return None
+
+
+def _short_form_record(handle, platform):
+    record = _empty_record(handle)
+    record["platform"] = platform
+    record["source"] = "Scrape Creators API (live)"
+    return record
+
+
+def _sponsors_from_caption(text, date, platform):
+    """Conservative brand extraction: only known lexicon brands found in the
+    caption of an already-confirmed paid-partnership post. Returns sponsor
+    dicts (deduped by brand within the post)."""
+    out = []
+    seen = set()
+    for pattern, _brief_cat in config.known_brands_in_text(text or ""):
+        if pattern in seen:
+            continue
+        seen.add(pattern)
+        out.append({
+            "name": pattern,
+            "category": None,
+            "date": date,
+            "confidence": "high",  # explicit paid-partnership flag + known brand
+            "platform": platform,
+        })
+    return out
+
+
+def _fetch_instagram_live(handle, months):
+    api_key = _require_api_key()
+    clean = handle.strip().lstrip("@")
+    cutoff = datetime.utcnow() - timedelta(days=30 * months)
+
+    def _inner():
+        record = _short_form_record(handle, "Instagram")
+        record["verified"] = True
+        sponsors = []
+        next_max_id = None
+        for _ in range(SHORT_FORM_MAX_PAGES):
+            params = {"handle": clean}
+            if next_max_id:
+                params["next_max_id"] = next_max_id
+            data = _api_get("/v2/instagram/user/posts", params, api_key)
+            if record["name"] is None:
+                record["name"] = (data.get("user") or {}).get("username") or clean
+            items = data.get("items") or []
+            reached_old = False
+            for it in items:
+                date = _unix_to_date(it.get("taken_at"))
+                if date is None:
+                    continue
+                if datetime.strptime(date, "%Y-%m-%d") < cutoff:
+                    reached_old = True
+                    break
+                # Only an explicit paid-partnership flag counts as a sponsor.
+                if not (it.get("is_paid_partnership") or it.get("is_ad")):
+                    continue
+                caption = (it.get("caption") or {}).get("text", "")
+                sponsors.extend(_sponsors_from_caption(caption, date, "Instagram"))
+            next_max_id = data.get("next_max_id")
+            if reached_old or not next_max_id or not items:
+                break
+        record["recent_sponsors"] = sponsors
+        return record
+
+    return _safe_live_fetch(handle, _inner)
+
+
+def _fetch_tiktok_live(handle, months):
+    api_key = _require_api_key()
+    clean = handle.strip().lstrip("@")
+    cutoff = datetime.utcnow() - timedelta(days=30 * months)
+
+    def _inner():
+        record = _short_form_record(handle, "TikTok")
+        data = _api_get("/v1/tiktok/profile", {"handle": clean}, api_key)
+        record["verified"] = True
+        record["name"] = (data.get("user") or {}).get("nickname") or clean
+        sponsors = []
+        # itemList is the documented recent-videos array (empty in practice).
+        for it in data.get("itemList") or []:
+            ts = it.get("createTime") or it.get("create_time")
+            date = _unix_to_date(ts)
+            if date is None or datetime.strptime(date, "%Y-%m-%d") < cutoff:
+                continue
+            if not (it.get("is_paid_partnership") or it.get("isAd") or it.get("is_ad")):
+                continue
+            caption = it.get("desc", "")
+            sponsors.extend(_sponsors_from_caption(caption, date, "TikTok"))
+        record["recent_sponsors"] = sponsors
+        return record
+
+    return _safe_live_fetch(handle, _inner)
+
+
+def _search_instagram_live(query, limit):
+    api_key = _require_api_key()
+    handles, seen = [], set()
+    cursor = None
+    for _ in range(_MAX_SEARCH_PAGES):
+        params = {"query": query}
+        if cursor:
+            params["cursor"] = cursor
+        page = _api_get("/v1/instagram/search/profiles", params, api_key)
+        for p in page.get("profiles") or []:
+            h = p.get("handle") or p.get("username") or (p.get("user") or {}).get("username")
+            if not h or h.lower() in seen:
+                continue
+            seen.add(h.lower())
+            handles.append({"handle": h, "name": p.get("full_name"), "platform": "Instagram"})
+            if len(handles) >= limit:
+                return handles
+        cursor = page.get("cursor")
+        if not cursor or not (page.get("profiles")):
+            break
+    return handles
+
+
+def _search_tiktok_live(query, limit):
+    api_key = _require_api_key()
+    handles, seen = [], set()
+    cursor = None
+    for _ in range(_MAX_SEARCH_PAGES):
+        params = {"query": query}
+        if cursor:
+            params["cursor"] = cursor
+        page = _api_get("/v1/tiktok/search/users", params, api_key)
+        for u in page.get("users") or []:
+            ui = u.get("user_info") or u
+            h = ui.get("unique_id") or ui.get("uniqueId")
+            if not h or h.lower() in seen:
+                continue
+            seen.add(h.lower())
+            handles.append({"handle": h, "name": ui.get("nickname"), "platform": "TikTok"})
+            if len(handles) >= limit:
+                return handles
+        cursor = page.get("cursor")
+        if not cursor or not (page.get("users")):
+            break
+    return handles
+
+
+# ---------------------------------------------------------------------------
+# MOCK football data for RADAR mode (so mock shows the full multi-platform
+# shape: brief categories, gambling exclusion, borderline review, roster
+# conflict/fit, live vs evergreen, and a TikTok that honestly yields nothing).
+# Sponsor tuples: (brand, months_ago, confidence). months_ago 0-1 -> LIVE.
+# ---------------------------------------------------------------------------
+_MOCK_RADAR = {
+    "YouTube": {
+        "footyadventures": {"name": "Footy Adventures (SAMPLE)", "sponsors": [
+            ("NordVPN", 0, "high"), ("Nike", 1, "high"),
+            ("Bet365", 1, "high"),        # gambling -> hard dropped
+            ("Sleeper", 2, "medium")]},   # borderline -> excluded for review
+        "number9": {"name": "Number 9 (SAMPLE)", "sponsors": [
+            ("adidas", 3, "high"), ("Red Bull", 2, "medium")]},
+        "vizeh": {"name": "Vizeh (SAMPLE)", "sponsors": [
+            ("EA Sports FC", 1, "high"),
+            ("Coinbase", 2, "high")]},     # borderline -> excluded for review
+        "footebate": {"name": "Footebate (SAMPLE)", "sponsors": [
+            ("DAZN", 4, "high")]},
+        "hrvizak": {"name": "HRVizak (SAMPLE)", "sponsors": [
+            ("Samsung", 2, "high")]},
+        "fiago": {"name": "Fiago (SAMPLE)", "sponsors": [
+            ("EA Sports FC", 0, "high"), ("Red Bull", 1, "high")]},
+        "stuntpegg": {"name": "StuntPegg (SAMPLE)", "sponsors": [
+            ("Manscaped", 5, "high"),
+            ("Bet365 Casino", 1, "high")]},  # gambling -> hard dropped
+        "soccerstatsdaily": {"name": "Soccer Stats Daily (SAMPLE)", "sponsors": [
+            ("NordVPN", 1, "high"), ("Nike", 9, "high")]},  # Nike here is >6mo -> dropped
+    },
+    "Instagram": {
+        "hrvizak": {"name": "HRVizak (SAMPLE)", "sponsors": [("adidas", 1, "high")]},
+        "footy.skills": {"name": "Footy Skills (SAMPLE)", "sponsors": [
+            ("Nike", 2, "high"), ("Prime Hydration", 0, "high")]},
+    },
+    "TikTok": {
+        # TikTok returns no usable per-creator feed in practice -> no sponsors.
+        "hrvizak": {"name": "HRVizak (SAMPLE)", "sponsors": []},
+    },
+}
+
+
+def _radar_fetch_mock(handle, platform, months):
+    record = _empty_record(handle)
+    record["platform"] = platform
+    record["source"] = "MOCK (sample data — not real)"
+    data = (_MOCK_RADAR.get(platform) or {}).get(handle.strip().lower().lstrip("@"))
+    if data is None:
+        return record
+    record["name"] = data.get("name")
+    sponsors = []
+    for brand, months_ago, conf in data.get("sponsors") or []:
+        if months is not None and months_ago > months:
+            continue
+        sponsors.append({
+            "name": brand, "category": None, "date": _months_ago(months_ago),
+            "confidence": conf, "platform": platform,
+        })
+    record["recent_sponsors"] = sponsors
+    return record
+
+
+def _radar_search_mock(platform, limit):
+    handles = list((_MOCK_RADAR.get(platform) or {}).keys())[:limit]
+    return [{"handle": h, "platform": platform} for h in handles]
+
+
+def radar_fetch(handle, platform, live=False, months=6, max_videos=None):
+    """Fetch one creator's recent sponsors on a given platform for radar mode."""
+    platform = platform.strip().lower()
+    if platform in ("youtube", "yt"):
+        if live:
+            return _fetch_live(handle, months=months, max_videos=max_videos)
+        return _fetch_mock(handle, months=months) if handle.strip().lower().lstrip("@") in _MOCK_CREATORS \
+            else _radar_fetch_mock(handle, "YouTube", months)
+    if platform in ("instagram", "ig"):
+        if live:
+            return _fetch_instagram_live(handle, months)
+        return _radar_fetch_mock(handle, "Instagram", months)
+    if platform in ("tiktok", "tt"):
+        if live:
+            return _fetch_tiktok_live(handle, months)
+        return _radar_fetch_mock(handle, "TikTok", months)
+    raise ValueError(f"Unknown platform: {platform!r}")
+
+
+def radar_search(query, platform, limit, live=False):
+    """Find creator handles for a topic query on a given platform."""
+    platform = platform.strip().lower()
+    if platform in ("youtube", "yt"):
+        if live:
+            return [{"handle": c["handle"], "platform": "YouTube"}
+                    for c in _search_channels_live(query, limit)]
+        return _radar_search_mock("YouTube", limit)
+    if platform in ("instagram", "ig"):
+        if live:
+            return _search_instagram_live(query, limit)
+        return _radar_search_mock("Instagram", limit)
+    if platform in ("tiktok", "tt"):
+        if live:
+            return _search_tiktok_live(query, limit)
+        return _radar_search_mock("TikTok", limit)
+    raise ValueError(f"Unknown platform: {platform!r}")

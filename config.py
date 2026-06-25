@@ -106,3 +106,170 @@ def category_for_sponsor(name):
             return category
     return None
 
+
+# ===========================================================================
+# MARKET RADAR DATA (gambling exclusion, brand lexicon, brief categories).
+# All data, no logic. Only ever used to FILTER or LABEL names the API returns
+# — never to invent a sponsor.
+# ===========================================================================
+
+# Gambling hard-exclusion. Any sponsor whose name matches one of these is
+# dropped from market output entirely. Covers sportsbooks, casinos, betting
+# apps, odds/tipster brands, bookmakers, real-money fantasy, cash "free to
+# play"/prediction apps, sweepstakes-cash apps, and crypto positioned as
+# betting. Lowercase substrings, matched case-insensitively.
+GAMBLING_PATTERNS = [
+    # Sportsbooks / bookmakers
+    "bet365", "betway", "betfair", "bet365", "draftkings", "fanduel sportsbook",
+    "betmgm", "caesars sportsbook", "pointsbet", "betano", "betclic", "bwin",
+    "unibet", "william hill", "ladbrokes", "paddy power", "coral", "skybet",
+    "sky bet", "betfred", "888sport", "888 sport", "10bet", "22bet", "1xbet",
+    "1x bet", "22 bet", "melbet", "parimatch", "dafabet", "marathonbet",
+    "stake.com", "stake.us", "stake casino", "rajabets", "pinnacle sports",
+    "sportsbet", "tab ", "tabcorp", "fanduel", "hard rock bet", "fliff",
+    "espn bet", "fanatics sportsbook", "betr", "novibet", "superbet",
+    # Casinos / slots / sweepstakes-cash
+    "casino", "slots", "roulette", "blackjack", "poker", "888casino",
+    "luckyland", "chumba", "pulsz", "wow vegas", "high 5 casino", "mcluck",
+    "stake.us", "sweepstakes casino", "social casino",
+    # Odds / tipsters
+    "tipster", "betting tips", "free bets", "free bet", "odds boost",
+    "no sweat bet", "parlay pick", "betting picks", "sure bet",
+    # Real-money / cash fantasy & prediction / cash free-to-play
+    "prizepicks", "underdog fantasy", "dream11", "my11circle", "mpl ",
+    "mobile premier league", "rush fantasy", "sleeper picks", "betr picks",
+    "real money", "cash prizes", "win real cash", "play for cash",
+    # Crypto positioned as betting
+    "crypto casino", "rollbit", "roobet", "duelbits", "bc.game", "betfury",
+    "gamdom", "cloudbet", "thunderpick", "betplay",
+]
+
+# Borderline names: ambiguous (could be gambling, could be a legitimate app or
+# brand of the same name). We do NOT include these in the main table and do NOT
+# silently drop them — they go to EXCLUDED FOR REVIEW with this reason.
+GAMBLING_BORDERLINE = {
+    "sleeper": "Fantasy app; free-to-play vs real-money cash contests unclear.",
+    "underdog": "'Underdog' may be Underdog Fantasy (real-money) or an unrelated brand.",
+    "stake": "Bare 'Stake' may be the crypto casino or an unrelated brand.",
+    "draft": "Bare 'Draft' may be a fantasy/betting product or generic word.",
+    "sorare": "Fantasy football NFTs; card trading vs real-money play is unclear.",
+    "parlay": "May be a betting parlay product or an unrelated brand.",
+    "coinbase": "Crypto exchange; investing vs betting framing depends on the read.",
+    "crypto.com": "Crypto exchange; investing vs betting framing depends on the read.",
+    "robinhood": "Trading app; investing vs betting framing depends on the read.",
+}
+
+# Brand lexicon for the campaign brief categories. Maps a brief category to the
+# brand-name patterns that fall in it (lowercase, substring match). Used to (a)
+# annotate each surfaced brand with its brief category, (b) decide same-category
+# roster conflicts, and (c) recognize known brands inside short-form captions.
+BRIEF_CATEGORY_BRANDS = {
+    "VPN/privacy": [
+        "nordvpn", "expressvpn", "surfshark", "cyberghost", "proton vpn",
+        "protonvpn", "private internet access", "pia", "mullvad", "atlas vpn",
+        "nordpass", "1password", "dashlane", "incogni", "windscribe", "ipvanish",
+    ],
+    "sports apparel/footwear": [
+        "nike", "adidas", "puma", "under armour", "new balance", "umbro",
+        "castore", "hummel", "kappa", "mizuno", "asics", "reebok", "macron",
+        "lyle and scott", "represent",
+    ],
+    "energy/hydration/supplements": [
+        "red bull", "redbull", "monster energy", "monster", "prime hydration",
+        "prime energy", "gatorade", "powerade", "lucozade", "celsius",
+        "ghost energy", "myprotein", "huel", "athletic greens", "ag1",
+        "liquid iv", "liquid i.v", "applied nutrition", "grenade", "sis ",
+        "science in sport",
+    ],
+    "sports/mobile gaming": [
+        "ea sports", "ea fc", "ea sports fc", "efootball", "konami",
+        "football manager", "top eleven", "dream league soccer", "sofascore",
+        "onefootball", "fotmob", "rocket league", "clash of clans", "coin master",
+        "raid shadow legends", "monopoly go", "ea play",
+    ],
+    "streaming": [
+        "dazn", "prime video", "amazon prime", "netflix", "disney+", "disney plus",
+        "paramount+", "peacock", "fubo", "sling tv", "apple tv", "hulu", "hbo max",
+        "max ", "tnt sports", "viaplay",
+    ],
+    "men's grooming/DTC": [
+        "manscaped", "dollar shave club", "harry's", "harrys", "gillette",
+        "cremo", "every man jack", "hims", "keeps", "beardbrand", "bulldog skincare",
+        "estrid",
+    ],
+    "fan merch/kits/collectibles": [
+        "fanatics", "panini", "topps", "kitbag", "classic football shirts",
+        "ultimate kit", "footy.com", "footydotcom", "subside sports", "homage",
+    ],
+    "consumer tech/audio": [
+        "samsung", "sony", "bose", "jbl", "anker", "soundcore", "beats by dre",
+        "beats", "sennheiser", "logitech", "raycon", "skullcandy", "oneplus",
+        "nothing phone", "honor ", "xiaomi", "shokz",
+    ],
+    "matchday food/snacks/beverages": [
+        "doritos", "pepsi", "coca cola", "coca-cola", "coke", "budweiser",
+        "bud light", "heineken", "grubhub", "just eat", "deliveroo", "uber eats",
+        "domino", "pizza hut", "mcdonald", "pringles", "lays", "lay's", "walkers",
+        "monster munch", "red bull",
+    ],
+    "telecom/mobile": [
+        "verizon", "t-mobile", "tmobile", "at&t", "vodafone", "ee ", "o2 ",
+        "three mobile", "mint mobile", "visible", "telekom", "orange ",
+        "jio", "airtel", "boost mobile",
+    ],
+}
+
+
+def is_gambling(name):
+    """True if a sponsor name matches the gambling hard-exclusion list."""
+    if not name:
+        return False
+    lowered = " " + name.strip().lower() + " "
+    return any(p in lowered or p in name.strip().lower() for p in GAMBLING_PATTERNS)
+
+
+def gambling_borderline_reason(name):
+    """Return a reason string if a name is a borderline gambling case, else None.
+
+    Matches on whole-word-ish boundaries so 'stake' flags 'Stake' but not
+    'beefsteak'. Only borderline standalone names are caught here.
+    """
+    if not name:
+        return None
+    tokens = set(
+        "".join(c if c.isalnum() else " " for c in name.lower()).split()
+    )
+    for pattern, reason in GAMBLING_BORDERLINE.items():
+        # Borderline keys are single words; match as a standalone token.
+        if pattern in tokens:
+            return reason
+    return None
+
+
+def brief_category_for(name):
+    """Map a brand name to one brief category, or 'uncategorized (brief)'."""
+    if not name:
+        return "uncategorized (brief)"
+    lowered = name.strip().lower()
+    for category, patterns in BRIEF_CATEGORY_BRANDS.items():
+        if any(p.strip() in lowered for p in patterns):
+            return category
+    return "uncategorized (brief)"
+
+
+def known_brands_in_text(text):
+    """Return the brief-lexicon brand display patterns found in a caption.
+
+    Used for conservative short-form extraction: we only name a brand inside a
+    paid-partnership post when a known brand pattern actually appears. Returns
+    a list of (matched_pattern, brief_category).
+    """
+    if not text:
+        return []
+    lowered = text.lower()
+    hits = []
+    for category, patterns in BRIEF_CATEGORY_BRANDS.items():
+        for p in patterns:
+            if p.strip() and p.strip() in lowered:
+                hits.append((p.strip(), category))
+    return hits

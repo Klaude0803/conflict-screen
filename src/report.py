@@ -150,3 +150,48 @@ def write_market_report(rows, out_path):
     )
     wb.save(out_path)
     return out_path
+
+
+# Radar (football brief) report: ranked brand table with the brief's columns,
+# colored by roster conflict, plus a separate EXCLUDED FOR REVIEW sheet.
+_RADAR_COLUMNS = [
+    ("Brand", lambda r: r.get("brand"), 22, False),
+    ("Brief category", lambda r: r.get("brief_category"), 24, False),
+    ("Platform", lambda r: r.get("platforms"), 20, False),
+    ("Recent sponsorships (proof)", lambda r: r.get("proof") or "", 44, True),
+    ("Live vs Evergreen", lambda r: r.get("recency_tag"), 18, False),
+    ("Suggested roster fit", lambda r: r.get("suggested_fit") or "none", 30, True),
+    ("Roster conflict", lambda r: r.get("roster_conflict"), 26, True),
+    ("Most recent date", lambda r: r.get("most_recent_date") or "", 16, False),
+    ("Verification", lambda r: r.get("verification"), 18, False),
+    ("Distinct creators", lambda r: r.get("distinct_creators"), 16, False),
+    ("Total placements", lambda r: r.get("total_placements"), 16, False),
+]
+
+_REVIEW_COLUMNS = [
+    ("Brand (EXCLUDED FOR REVIEW)", lambda r: r.get("brand"), 32, False),
+    ("Reason", lambda r: r.get("reason"), 70, True),
+]
+
+
+def _radar_fill(row):
+    rc = (row.get("roster_conflict") or "")
+    if rc.startswith("CONFLICT"):
+        return _FILLS[conflict_mod.CONFLICT]
+    if rc == "CLEAR":
+        return _FILLS[conflict_mod.CLEAR]
+    if rc.startswith("UNVERIFIED"):
+        return _FILLS[conflict_mod.UNVERIFIED]
+    return None  # n/a (no roster) -> uncolored
+
+
+def write_radar_report(rows, out_path, excluded_for_review=None):
+    """Write the football radar: ranked brand sheet + excluded-for-review sheet."""
+    wb = Workbook()
+    _render_sheet(wb.active, "Football Radar", _RADAR_COLUMNS, rows,
+                  fill_for=_radar_fill)
+    review = wb.create_sheet("Excluded for review")
+    _render_sheet(review, "Excluded for review", _REVIEW_COLUMNS,
+                  excluded_for_review or [], fill_for=lambda r: _FILLS[conflict_mod.UNVERIFIED])
+    wb.save(out_path)
+    return out_path

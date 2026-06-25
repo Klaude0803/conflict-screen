@@ -62,6 +62,23 @@ def parse_args(argv=None):
         help="Market mode: map which brands sponsor creators in a niche.",
     )
     p.add_argument(
+        "--radar", action="store_true",
+        help="Radar mode: multi-platform brand radar with gambling exclusion, "
+             "live/evergreen tags, and roster conflict/fit (the football brief).",
+    )
+    p.add_argument(
+        "--roster",
+        help="(radar mode) CSV: each row a creator handle plus comma-separated niche tags.",
+    )
+    p.add_argument(
+        "--platforms", default="youtube",
+        help="(radar mode) Comma-separated platforms: youtube,tiktok,instagram.",
+    )
+    p.add_argument(
+        "--plan-only", action="store_true",
+        help="(radar mode) Print the planned live lookup count and exit (no spend).",
+    )
+    p.add_argument(
         "--draft", action="store_true",
         help="Draft mode: write a cold-email DRAFT to a brand (never sends).",
     )
@@ -130,10 +147,13 @@ def parse_args(argv=None):
     if args.sequence:
         args.draft = True
 
-    if sum(bool(m) for m in (args.source, args.market, args.draft)) > 1:
-        p.error("choose one mode: --source, --market, or --draft.")
+    if sum(bool(m) for m in (args.source, args.market, args.draft, args.radar)) > 1:
+        p.error("choose one mode: --source, --market, --radar, or --draft.")
 
-    if args.draft:
+    if args.radar:
+        if not (args.query or args.roster):
+            p.error("--radar requires --query and/or --roster.")
+    elif args.draft:
         if not args.brand:
             p.error("--draft requires --brand.")
     elif args.market:
@@ -156,6 +176,8 @@ def parse_args(argv=None):
             args.out = f"sequence_{slug}.txt" if args.sequence else f"draft_{slug}.txt"
         elif args.market:
             args.out = "market_report.xlsx"
+        elif args.radar:
+            args.out = "radar_report.xlsx"
         elif args.source:
             args.out = "sourced_report.xlsx"
         else:
@@ -450,8 +472,158 @@ def run_draft(args):
     return 0
 
 
+def _read_roster(path):
+    """Read a roster CSV: each row a handle plus comma-separated niche tags.
+
+    Accepts either a 2-column 'handle,tags' file or a row where the first cell
+    is the handle and the rest are tags. Returns {handle: [tags]}.
+    """
+    roster = {}
+    with open(path, newline="", encoding="utf-8") as f:
+        reader = csv.reader(f)
+        for row in reader:
+            cells = [c.strip() for c in row if c is not None]
+            cells = [c for c in cells if c != ""]
+            if not cells:
+                continue
+            handle = cells[0].lstrip("@")
+            if handle.lower() in ("handle", "creator"):
+                continue  # header row
+            tags = []
+            for c in cells[1:]:
+                tags += [t.strip() for t in c.split(",") if t.strip()]
+            roster[handle] = tags
+    return roster
+
+
+# Per-creator live lookup cost by platform (for the planned-spend estimate).
+def _per_creator_lookups(platform, videos_per_creator):
+    platform = platform.lower()
+    if platform in ("youtube", "yt"):
+        # 1 channel + ~1 channel-videos page + up to N video-sponsor calls.
+        return 2 + videos_per_creator
+    if platform in ("instagram", "ig"):
+        return 2  # up to a couple of posts pages
+    if platform in ("tiktok", "tt"):
+        return 1  # one profile call
+    return 1
+
+
+def run_radar(args):
+    """Radar mode: multi-platform brand radar for the football brief."""
+    mode = "LIVE" if args.live else "MOCK (sample data)"
+    platforms = [p.strip() for p in args.platforms.split(",") if p.strip()]
+    queries = [q.strip() for q in (args.query or "").split(",") if q.strip()]
+    roster = _read_roster(args.roster) if args.roster else {}
+    scan_months, conflict_months = args.months, 12
+
+    print("Football brand radar")
+    print(f"Mode: {mode}")
+    print(f"Platforms: {', '.join(platforms)}")
+    print(f"Queries: {queries or '(roster only)'}")
+    print(f"Roster: {len(roster)} creator(s) | scan window: {scan_months}mo | "
+          f"conflict window: {conflict_months}mo")
+    print(f"Caps — creators/platform: {args.limit}, videos/creator: "
+          f"{args.videos_per_creator}, min-confidence: {args.min_confidence}\n")
+
+    # --- Cost control: print the exact planned live lookups. ----------------
+    # Per-platform creators = roster handles + up to --limit search results.
+    planned_creators = {}
+    for pf in platforms:
+        planned_creators[pf] = min(args.limit, args.limit) + len(roster)
+    search_calls = sum(len(queries) for _ in platforms)
+    fetch_calls = sum(
+        planned_creators[pf] * _per_creator_lookups(pf, args.videos_per_creator)
+        for pf in platforms
+    )
+    total_planned = search_calls + fetch_calls
+    print("PLANNED LIVE LOOKUPS (upper bound):")
+    for pf in platforms:
+        per = _per_creator_lookups(pf, args.videos_per_creator)
+        print(f"  {pf}: {len(queries)} search + {planned_creators[pf]} creators x "
+              f"~{per} lookups = ~{len(queries) + planned_creators[pf]*per}")
+    print(f"  TOTAL upper bound: ~{total_planned} live lookups "
+          f"(search {search_calls} + per-creator {fetch_calls}).")
+    if args.plan_only:
+        print("\n--plan-only set: stopping before any live calls. No spend.")
+        return 0
+    print()
+
+    # --- Gather creators per platform (roster + deduped search). -----------
+    to_fetch = []  # (handle, platform, is_roster)
+    for pf in platforms:
+        seen = set()
+        for h in roster:
+            seen.add(h.lower())
+            to_fetch.append((h, pf, True))
+        if queries and (args.live or True):
+            picked = 0
+            for q in queries:
+                for c in scrape_client.radar_search(q, pf, args.limit, live=args.live):
+                    hl = c["handle"].lower().lstrip("@")
+                    if hl in seen:
+                        continue
+                    seen.add(hl)
+                    to_fetch.append((c["handle"], pf, False))
+                    picked += 1
+                    if picked >= args.limit:
+                        break
+                if picked >= args.limit:
+                    break
+    print(f"Gathered {len(to_fetch)} (creator, platform) pairs to scan.\n")
+
+    # --- Fetch each creator's sponsors on its platform. --------------------
+    records, skipped = [], 0
+    for handle, pf, is_roster in to_fetch:
+        months = conflict_months if is_roster else scan_months
+        rec = scrape_client.radar_fetch(
+            handle, pf, live=args.live, months=months,
+            max_videos=args.videos_per_creator,
+        )
+        if rec.get("error"):
+            skipped += 1
+            print(f"  {handle} [{pf}]: UNVERIFIED (skipped) — {rec['error']}")
+            continue
+        records.append(rec)
+        n = len(rec.get("recent_sponsors") or [])
+        print(f"  {handle} [{rec.get('platform')}]: {n} sponsor placement(s)")
+
+    # --- Aggregate into the radar table. -----------------------------------
+    rows, review, stats = market_mod.aggregate_radar(
+        records, scan_months=scan_months, conflict_months=conflict_months,
+        roster=roster, min_confidence=args.min_confidence,
+    )
+
+    print(f"\nScanned {len(records)} creator-platform record(s); {skipped} skipped.")
+    print(f"Dropped: {stats['gambling']} gambling (hard), "
+          f"{stats['low_confidence']} below confidence, {stats['generic']} generic, "
+          f"{stats['self_reference']} self-reference.")
+
+    if rows:
+        print(f"\nRanked brands ({len(rows)}):")
+        hdr = f"  {'BRAND':<18}{'CATEGORY':<26}{'PLATFORM':<20}{'TAG':<20}{'CONFLICT':<22}RECENT"
+        print(hdr)
+        for r in rows:
+            print(f"  {r['brand'][:17]:<18}{r['brief_category'][:25]:<26}"
+                  f"{r['platforms'][:19]:<20}{r['recency_tag'][:19]:<20}"
+                  f"{r['roster_conflict'][:21]:<22}{r['most_recent_date']}")
+    else:
+        print("\nNo brands surfaced after exclusions and filtering.")
+
+    if review:
+        print(f"\nEXCLUDED FOR REVIEW ({len(review)} borderline name(s)):")
+        for x in review:
+            print(f"  {x['brand']}: {x['reason']}")
+
+    out_path = report_mod.write_radar_report(rows, args.out, excluded_for_review=review)
+    print(f"\nWrote radar report to: {out_path}")
+    return 0
+
+
 def main(argv=None):
     args = parse_args(argv)
+    if args.radar:
+        return run_radar(args)
     if args.draft:
         return run_draft(args)
     if args.market:
