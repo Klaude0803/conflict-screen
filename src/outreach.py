@@ -269,18 +269,21 @@ def _touch_bodies(brand, category, recent, handles):
     )
     nw2 = "Adds an audience insight: this niche over indexes on travelers and cross region streamers."
 
-    # Touch 3 — a completely different frame: an activation concept.
+    # Touch 3 — a completely different frame, with the concept DELIVERED
+    # inline (stated concretely) rather than offered for later. The single CTA
+    # is a soft close, not a request to send anything.
     t3 = (
         f"Hi {brand} team,\n\n"
-        f"Different angle entirely. The strongest VPN creator reads are not "
-        f"feature lists, they are one real moment: a creator hitting a blackout "
-        f"or a geo wall on camera and solving it in ten seconds. {c1} could "
-        f"carry that better than most, and it reframes {brand} from a tool into "
-        f"a reflex. Would a one paragraph version of that concept be useful to "
-        f"you?"
+        f"Different angle, and here is the actual concept rather than a tease. "
+        f"{c1} hits a blackout on a match they are already watching, opens "
+        f"{brand} on camera, and is back in under ten seconds. No script, no "
+        f"studio, one real moment instead of a feature list. That is the read "
+        f"that reframes {brand} from a tool into a reflex, and it travels "
+        f"across every creator in this lane. If that direction fits how you see "
+        f"it, worth a quick word?"
         + _signoff()
     )
-    nw3 = "Reframes around a concrete activation concept: the on camera geo wall moment."
+    nw3 = "States the activation concept inline: the on camera blackout moment, delivered not offered."
 
     # Touch 4 — reduce friction: routing / yes or no.
     t4 = (
