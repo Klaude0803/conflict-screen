@@ -33,13 +33,15 @@ For each creator handle you give it, the tool:
 pip install -r requirements.txt
 ```
 
-## Three modes
+## Four modes
 
 - **Screen** (default) — screen a list of handles you already have.
 - **Source** (`--source`) — discover creators by topic, then screen them.
 - **Market** (`--market`) — map which brands sponsor creators in a niche.
+- **Draft** (`--draft`) — draft a cold email to a brand (never sends).
 
-All run in mock mode by default; add `--live` for the real API.
+The first three run in mock mode by default; add `--live` for the real API.
+Draft mode is fully local — it never calls any API or sending service.
 
 ## Screen mode (mock — no API key)
 
@@ -144,6 +146,40 @@ batch. Only sponsors the API actually returned are counted; nothing is
 invented. Note the live `suspectedSponsors` field can be noisy (it sometimes
 returns generic phrases like "any VPN provider"); the map reflects exactly what
 the API returned.
+
+## Draft mode — cold-email a brand (DRAFTS ONLY)
+
+```bash
+python run.py --draft --brand ExpressVPN --category vpn --recent 2026-06-25 \
+    --creators "TomSparkReviews,securitysam" --out draft_expressvpn.txt
+# or auto-pull the brand's row from a market-radar CSV:
+python run.py --draft --brand ExpressVPN --market-csv market.csv
+```
+
+Generates a cold-email **draft** from a market-radar row and writes it to a
+local text file clearly labeled `DRAFT — review before sending`. It produces
+three curiosity-driven subject lines (each under 60 characters) and one email
+body of 75 to 110 words that opens with specific insider knowledge of what the
+brand is doing with creators in the niche (using the example creators as proof),
+makes the warm-by-proxy point, and ends with exactly one call to action. No
+ASCII hyphens appear anywhere in the subjects or body (em dashes are fine); the
+tone is a calm senior operator, not a vendor chasing a close.
+
+| Flag           | Description                                                        |
+|----------------|--------------------------------------------------------------------|
+| `--draft`      | Enable draft mode.                                                 |
+| `--brand`      | Brand to write to (required).                                     |
+| `--category`   | Brand category (from the market radar).                           |
+| `--recent`     | Most recent placement date (from the market radar).               |
+| `--creators`   | Comma-separated example handles already running the brand.        |
+| `--market-csv` | Optional market-radar CSV to auto-pull the brand's row.           |
+| `--out`        | Output text path (default `draft_<brand>.txt`).                   |
+
+> **DRAFTS ONLY.** This mode never sends anything and has no email/sending
+> integration. It writes a local file for you to review and send manually.
+> The hard constraints (subject length, no hyphens, 75 to 110 words, exactly
+> one CTA, no "I run an agency" or backend talk) are validated before the file
+> is written. Run with just `--brand` to see it work off a built-in sample row.
 
 ## Input CSV
 

@@ -21,6 +21,7 @@ import sys
 from collections import Counter
 
 from src import market as market_mod
+from src import outreach as outreach_mod
 from src import report as report_mod
 from src import screen as screen_mod
 from src import scrape_client
@@ -61,8 +62,25 @@ def parse_args(argv=None):
         help="Market mode: map which brands sponsor creators in a niche.",
     )
     p.add_argument(
+        "--draft", action="store_true",
+        help="Draft mode: write a cold-email DRAFT to a brand (never sends).",
+    )
+    p.add_argument(
         "--creators",
-        help="(screen/market mode) Path to a CSV with a 'handle' column.",
+        help="(screen/market) CSV path with a 'handle' column; "
+             "(draft) comma-separated example handles for the brand.",
+    )
+    p.add_argument(
+        "--category",
+        help="(draft mode) The brand's category, from the market radar.",
+    )
+    p.add_argument(
+        "--recent",
+        help="(draft mode) Most recent placement date, from the market radar.",
+    )
+    p.add_argument(
+        "--market-csv",
+        help="(draft mode) Optional market-radar CSV to auto-pull the brand row.",
     )
     p.add_argument(
         "--query",
@@ -103,10 +121,13 @@ def parse_args(argv=None):
     )
     args = p.parse_args(argv)
 
-    if args.source and args.market:
-        p.error("choose one mode: --source or --market, not both.")
+    if sum(bool(m) for m in (args.source, args.market, args.draft)) > 1:
+        p.error("choose one mode: --source, --market, or --draft.")
 
-    if args.market:
+    if args.draft:
+        if not args.brand:
+            p.error("--draft requires --brand.")
+    elif args.market:
         if not (args.query or args.creators):
             p.error("--market requires --query or --creators.")
     elif args.source:
@@ -121,7 +142,10 @@ def parse_args(argv=None):
             p.error("screen mode requires --creators (or pass --source/--market).")
 
     if args.out is None:
-        if args.market:
+        if args.draft:
+            slug = "".join(c for c in args.brand.lower() if c.isalnum()) or "brand"
+            args.out = f"draft_{slug}.txt"
+        elif args.market:
             args.out = "market_report.xlsx"
         elif args.source:
             args.out = "sourced_report.xlsx"
@@ -322,8 +346,95 @@ def run_market(args):
     return 0
 
 
+def _row_from_market_csv(path, brand):
+    """Pull a brand's row from a market-radar CSV (lenient on column names).
+
+    Returns (category, recent, [handles]) or (None, None, []) if not found.
+    """
+    want = brand.strip().lower()
+    with open(path, newline="", encoding="utf-8") as f:
+        reader = csv.DictReader(f)
+        # Map headers case-insensitively / loosely to the fields we need.
+        def find_col(*needles):
+            for col in reader.fieldnames or []:
+                low = col.lower()
+                if all(n in low for n in needles):
+                    return col
+            return None
+
+        brand_col = find_col("brand")
+        cat_col = find_col("category")
+        recent_col = find_col("recent")
+        ex_col = find_col("example")
+        for row in reader:
+            if brand_col and (row.get(brand_col) or "").strip().lower() == want:
+                category = (row.get(cat_col) or "").strip() if cat_col else None
+                recent = (row.get(recent_col) or "").strip() if recent_col else None
+                examples = (row.get(ex_col) or "") if ex_col else ""
+                handles = [h.strip() for h in examples.split(",") if h.strip()]
+                return category or None, recent or None, handles
+    return None, None, []
+
+
+# A built-in sample row so draft mode works out of the box (mock).
+_SAMPLE_DRAFT_ROW = {
+    "category": "vpn",
+    "recent": "2026-06-25",
+    "creators": ["securitysam", "vpnvinny"],
+}
+
+
+def run_draft(args):
+    """Draft mode: write a cold-email DRAFT to a brand. Never sends anything."""
+    print(f"Drafting outreach for brand: {args.brand}")
+    print("Mode: DRAFT ONLY — nothing is sent, no email integration.\n")
+
+    category, recent, creators = args.category, args.recent, []
+    if args.creators:
+        creators = [h.strip() for h in args.creators.split(",") if h.strip()]
+
+    # Optionally auto-pull the row from a market-radar CSV.
+    if args.market_csv:
+        csv_cat, csv_recent, csv_handles = _row_from_market_csv(args.market_csv, args.brand)
+        category = category or csv_cat
+        recent = recent or csv_recent
+        creators = creators or csv_handles
+        if csv_cat or csv_recent or csv_handles:
+            print(f"Pulled '{args.brand}' row from {args.market_csv}.")
+        else:
+            print(f"Note: '{args.brand}' not found in {args.market_csv}; using flags/sample.")
+
+    # Fall back to the sample row so mock mode always works.
+    used_sample = False
+    if not (category or recent or creators):
+        category = _SAMPLE_DRAFT_ROW["category"]
+        recent = _SAMPLE_DRAFT_ROW["recent"]
+        creators = list(_SAMPLE_DRAFT_ROW["creators"])
+        used_sample = True
+        print("No row details supplied; using the built-in SAMPLE brand row.")
+
+    draft = outreach_mod.build_draft(
+        args.brand, category=category, recent=recent, creators=creators,
+    )
+    out_path = outreach_mod.write_draft(
+        draft, args.out, category=category, recent=recent, creators=creators,
+    )
+
+    # Echo the draft to the console too.
+    print()
+    print(outreach_mod.render_draft_text(
+        draft, category=category, recent=recent, creators=creators,
+    ))
+    if used_sample:
+        print("\n(Generated from SAMPLE data.)")
+    print(f"\nWrote DRAFT to: {out_path}  (review before sending — not sent)")
+    return 0
+
+
 def main(argv=None):
     args = parse_args(argv)
+    if args.draft:
+        return run_draft(args)
     if args.market:
         return run_market(args)
     if args.source:
