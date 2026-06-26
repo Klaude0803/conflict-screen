@@ -156,6 +156,8 @@ def write_market_report(rows, out_path):
 # colored by roster conflict, plus a separate EXCLUDED FOR REVIEW sheet.
 _RADAR_COLUMNS = [
     ("Brand", lambda r: r.get("brand"), 22, False),
+    ("Reachability", lambda r: r.get("reachability") or "", 16, False),
+    ("Contact starting point", lambda r: r.get("contact_start") or "", 46, True),
     ("Brief category", lambda r: r.get("brief_category"), 24, False),
     ("Platform", lambda r: r.get("platforms"), 20, False),
     ("Recent sponsorships (proof)", lambda r: r.get("proof") or "", 44, True),

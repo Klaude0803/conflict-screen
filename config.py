@@ -220,12 +220,38 @@ BRIEF_CATEGORY_BRANDS = {
 }
 
 
+# Known mega-brands to ALWAYS classify LIKELY AGENCY (enterprise scale, almost
+# always agency- or in-house-gated). Editable household names; word-boundary
+# matched. This is a heuristic about scale, never a claim about their process.
+MEGA_BRANDS = [
+    "nike", "adidas", "puma", "under armour", "new balance",
+    "samsung", "sony", "lg", "apple", "google", "microsoft", "amazon",
+    "coca cola", "coca-cola", "coke", "pepsi", "red bull", "redbull",
+    "monster energy", "gatorade", "powerade",
+    "ea sports", "ea sports fc", "ea fc", "electronic arts", "konami",
+    "netflix", "disney", "hbo max", "prime video", "spotify", "youtube",
+    "mcdonald", "burger king", "budweiser", "bud light", "heineken",
+    "verizon", "at&t", "t-mobile", "vodafone", "visa", "mastercard", "paypal",
+    "intel", "amd", "nvidia", "meta", "bose", "jbl", "beats by dre",
+    "xbox", "playstation", "nintendo", "doritos", "pringles", "gillette",
+    "l'oreal", "loreal", "dazn",
+]
+
+
 def is_gambling(name):
     """True if a sponsor name matches the gambling hard-exclusion list."""
     if not name:
         return False
     lowered = " " + name.strip().lower() + " "
     return any(p in lowered or p in name.strip().lower() for p in GAMBLING_PATTERNS)
+
+
+def is_mega_brand(name):
+    """True if a brand is on the editable mega-brand (LIKELY AGENCY) list."""
+    if not name:
+        return False
+    lowered = name.strip().lower()
+    return any(_pattern_matches(p, lowered) for p in MEGA_BRANDS)
 
 
 def gambling_borderline_reason(name):

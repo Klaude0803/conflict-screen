@@ -247,6 +247,55 @@ BRIEF_CATEGORY_FIT_TAGS = {
 }
 
 
+# Reachability heuristic thresholds (creator mix + brand size). A suggestion
+# from real signal, never a claim about a brand's actual process.
+_LARGE_SUBS = 1_000_000     # a creator at/above this counts as "large"
+_DIRECT_MAX_CREATORS = 4    # "a few" distinct creators
+_AGENCY_MIN_CREATORS = 6    # "very high" distinct-creator count
+_AGENCY_MIN_LARGE = 2       # "several" large creators
+
+_CONTACT_DIRECT = (
+    "Check by hand: company website + partnerships/press page; founder or "
+    "growth/partnerships lead on LinkedIn; a partnerships@ or hello@ address. "
+    "Verify before any outreach."
+)
+_CONTACT_AGENCY = (
+    "Likely agency or in-house enterprise team; expect gatekeeping. No direct "
+    "cold surface suggested."
+)
+_CONTACT_UNCLEAR = (
+    "Mixed signals; check the website and LinkedIn to confirm who owns "
+    "partnerships before reaching out."
+)
+
+# Sort priority so LIKELY DIRECT floats to the top.
+_REACH_RANK = {"LIKELY DIRECT": 0, "UNCLEAR": 1, "LIKELY AGENCY": 2}
+
+
+def _reachability(display, distinct_creators, creator_subs):
+    """Classify a brand's reachability tier from real signal only.
+
+    creator_subs: list of subscriber counts (None for unknown) of contributing
+    creators. Returns (tier, contact_starting_point). Heuristic, not a claim
+    about the brand's real process.
+    """
+    if config.is_mega_brand(display):
+        return "LIKELY AGENCY", _CONTACT_AGENCY
+
+    known = [s for s in creator_subs if isinstance(s, int)]
+    large = sum(1 for s in known if s >= _LARGE_SUBS)
+
+    # Enterprise scale: several large creators, or a very wide creator spread.
+    if large >= _AGENCY_MIN_LARGE or distinct_creators >= _AGENCY_MIN_CREATORS:
+        return "LIKELY AGENCY", _CONTACT_AGENCY
+
+    # Concentrated on a few mid-sized creators, none confirmed large.
+    if distinct_creators <= _DIRECT_MAX_CREATORS and large == 0 and known:
+        return "LIKELY DIRECT", _CONTACT_DIRECT
+
+    return "UNCLEAR", _CONTACT_UNCLEAR
+
+
 def _recency_tag(date_str):
     """LIVE (<30d), ACTIVE (<=6mo), or None (older -> dropped)."""
     if not date_str:
@@ -362,7 +411,7 @@ def aggregate_radar(records, *, scan_months, conflict_months, roster=None,
             if e is None:
                 e = {"names": {}, "creators": set(), "placements": 0,
                      "platforms": set(), "most_recent": None,
-                     "examples": [], "verified_any": False}
+                     "examples": [], "verified_any": False, "creator_subs": {}}
                 brands[key] = e
             e["names"][name] = e["names"].get(name, 0) + 1
             e["placements"] += 1
@@ -373,6 +422,11 @@ def aggregate_radar(records, *, scan_months, conflict_months, roster=None,
             date = s.get("date")
             if handle:
                 e["creators"].add(handle)
+                # Largest known size seen for this creator (subs/followers).
+                subs = rec.get("subscribers")
+                if isinstance(subs, int):
+                    prev = e["creator_subs"].get(handle)
+                    e["creator_subs"][handle] = max(prev or 0, subs)
                 if len(e["examples"]) < 3 and handle not in [x[0] for x in e["examples"]]:
                     e["examples"].append((handle, date, platform))
             if date and (e["most_recent"] is None or date > e["most_recent"]):
@@ -410,12 +464,18 @@ def aggregate_radar(records, *, scan_months, conflict_months, roster=None,
         proof = "; ".join(
             f"{h} on {pf} ({_fmt_month(d)})" for h, d, pf in e["examples"]
         )
+        # Reachability tier from creator mix + brand size (real signal only).
+        reach, contact = _reachability(
+            display, len(e["creators"]), list(e["creator_subs"].values())
+        )
         rows.append({
             "brand": display,
             "brief_category": brief_cat,
             "platforms": ", ".join(sorted(e["platforms"])),
             "proof": proof,
             "recency_tag": tag,
+            "reachability": reach,
+            "contact_start": contact,
             "suggested_fit": ", ".join(sorted(fit)) if fit else "none",
             "roster_conflict": conflict,
             "most_recent_date": e["most_recent"] or "",
@@ -424,8 +484,11 @@ def aggregate_radar(records, *, scan_months, conflict_months, roster=None,
             "total_placements": e["placements"],
         })
 
-    rows.sort(key=lambda r: (r["distinct_creators"], r["total_placements"]),
-              reverse=True)
+    # Sort by reachability (LIKELY DIRECT first), then by activity.
+    rows.sort(key=lambda r: (
+        _REACH_RANK.get(r["reachability"], 1),
+        -r["distinct_creators"], -r["total_placements"],
+    ))
     stats = dict(dropped)
     stats["min_confidence"] = (min_confidence or "medium").lower()
     stats["excluded_for_review"] = len(excluded_for_review)

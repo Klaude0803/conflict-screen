@@ -600,13 +600,15 @@ def run_radar(args):
           f"{stats['self_reference']} self-reference.")
 
     if rows:
-        print(f"\nRanked brands ({len(rows)}):")
-        hdr = f"  {'BRAND':<18}{'CATEGORY':<26}{'PLATFORM':<20}{'TAG':<20}{'CONFLICT':<22}RECENT"
+        print(f"\nRanked brands ({len(rows)}) — LIKELY DIRECT first:")
+        hdr = (f"  {'BRAND':<17}{'REACHABILITY':<16}{'CATEGORY':<24}"
+               f"{'PLATFORM':<20}{'TAG':<20}{'CONFLICT':<22}RECENT")
         print(hdr)
         for r in rows:
-            print(f"  {r['brand'][:17]:<18}{r['brief_category'][:25]:<26}"
-                  f"{r['platforms'][:19]:<20}{r['recency_tag'][:19]:<20}"
-                  f"{r['roster_conflict'][:21]:<22}{r['most_recent_date']}")
+            print(f"  {r['brand'][:16]:<17}{r['reachability']:<16}"
+                  f"{r['brief_category'][:23]:<24}{r['platforms'][:19]:<20}"
+                  f"{r['recency_tag'][:19]:<20}{r['roster_conflict'][:21]:<22}"
+                  f"{r['most_recent_date']}")
     else:
         print("\nNo brands surfaced after exclusions and filtering.")
 

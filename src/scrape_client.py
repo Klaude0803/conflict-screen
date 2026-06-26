@@ -734,35 +734,41 @@ def _search_tiktok_live(query, limit):
 # ---------------------------------------------------------------------------
 _MOCK_RADAR = {
     "YouTube": {
-        "footyadventures": {"name": "Footy Adventures (SAMPLE)", "sponsors": [
+        "footyadventures": {"name": "Footy Adventures (SAMPLE)", "subs": 238000, "sponsors": [
             ("NordVPN", 0, "high"), ("Nike", 1, "high"),
             ("Bet365", 1, "high"),        # gambling -> hard dropped
             ("Sleeper", 2, "medium")]},   # borderline -> excluded for review
-        "number9": {"name": "Number 9 (SAMPLE)", "sponsors": [
+        "number9": {"name": "Number 9 (SAMPLE)", "subs": 104000, "sponsors": [
             ("adidas", 3, "high"), ("Red Bull", 2, "medium")]},
-        "vizeh": {"name": "Vizeh (SAMPLE)", "sponsors": [
+        "vizeh": {"name": "Vizeh (SAMPLE)", "subs": 490000, "sponsors": [
             ("EA Sports FC", 1, "high"),
             ("Coinbase", 2, "high")]},     # borderline -> excluded for review
-        "footebate": {"name": "Footebate (SAMPLE)", "sponsors": [
+        "footebate": {"name": "Footebate (SAMPLE)", "subs": 207000, "sponsors": [
             ("DAZN", 4, "high")]},
-        "hrvizak": {"name": "HRVizak (SAMPLE)", "sponsors": [
+        "hrvizak": {"name": "HRVizak (SAMPLE)", "subs": 291000, "sponsors": [
             ("Samsung", 2, "high")]},
-        "fiago": {"name": "Fiago (SAMPLE)", "sponsors": [
+        "fiago": {"name": "Fiago (SAMPLE)", "subs": 847000, "sponsors": [
             ("EA Sports FC", 0, "high"), ("Red Bull", 1, "high")]},
-        "stuntpegg": {"name": "StuntPegg (SAMPLE)", "sponsors": [
+        "stuntpegg": {"name": "StuntPegg (SAMPLE)", "subs": 472000, "sponsors": [
             ("Manscaped", 5, "high"),
             ("Bet365 Casino", 1, "high")]},  # gambling -> hard dropped
-        "soccerstatsdaily": {"name": "Soccer Stats Daily (SAMPLE)", "sponsors": [
+        "soccerstatsdaily": {"name": "Soccer Stats Daily (SAMPLE)", "subs": 60000, "sponsors": [
             ("NordVPN", 1, "high"), ("Nike", 9, "high")]},  # Nike here is >6mo -> dropped
+        # Two large (>1M) discovered creators: a non-mega brand on both shows
+        # the LIKELY AGENCY by creator-mix path (Surfshark, not on mega list).
+        "globalfootballtv": {"name": "Global Football TV (SAMPLE)", "subs": 3200000, "sponsors": [
+            ("Surfshark", 1, "high")]},
+        "worldsoccerhd": {"name": "World Soccer HD (SAMPLE)", "subs": 1800000, "sponsors": [
+            ("Surfshark", 2, "high")]},
     },
     "Instagram": {
-        "hrvizak": {"name": "HRVizak (SAMPLE)", "sponsors": [("adidas", 1, "high")]},
-        "footy.skills": {"name": "Footy Skills (SAMPLE)", "sponsors": [
+        "hrvizak": {"name": "HRVizak (SAMPLE)", "subs": 325000, "sponsors": [("adidas", 1, "high")]},
+        "footy.skills": {"name": "Footy Skills (SAMPLE)", "subs": 150000, "sponsors": [
             ("Nike", 2, "high"), ("Prime Hydration", 0, "high")]},
     },
     "TikTok": {
         # TikTok returns no usable per-creator feed in practice -> no sponsors.
-        "hrvizak": {"name": "HRVizak (SAMPLE)", "sponsors": []},
+        "hrvizak": {"name": "HRVizak (SAMPLE)", "subs": 410000, "sponsors": []},
     },
 }
 
@@ -775,6 +781,7 @@ def _radar_fetch_mock(handle, platform, months):
     if data is None:
         return record
     record["name"] = data.get("name")
+    record["subscribers"] = data.get("subs")
     sponsors = []
     for brand, months_ago, conf in data.get("sponsors") or []:
         if months is not None and months_ago > months:
