@@ -102,20 +102,32 @@ def _render_sheet(ws, title, cols, rows, fill_for):
         ws.column_dimensions[get_column_letter(col_idx)].width = width
 
 
-def write_report(results, out_path, include_source_columns=False):
+def write_report(results, out_path, include_source_columns=False,
+                 needs_verification=None):
     """Write screened results to an XLSX file at out_path.
 
     Set ``include_source_columns=True`` for source mode to add the Search
-    Query and Channel Country columns.
+    Query and Channel Country columns. ``needs_verification`` (source mode) is
+    written to a separate sheet for creators whose subscriber count could not
+    be retrieved, so the range filter is never applied to a guessed number.
     """
+    cols = _columns(include_source_columns)
     wb = Workbook()
     _render_sheet(
         wb.active,
         "Creator Sourcing" if include_source_columns else "Conflict Screen",
-        _columns(include_source_columns),
+        cols,
         results,
         fill_for=lambda r: _FILLS.get(r.get("status")),
     )
+    if needs_verification:
+        _render_sheet(
+            wb.create_sheet("Needs verification"),
+            "Needs verification",
+            cols,
+            needs_verification,
+            fill_for=lambda r: _FILLS[conflict_mod.UNVERIFIED],
+        )
     wb.save(out_path)
     return out_path
 

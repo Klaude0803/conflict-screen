@@ -254,40 +254,58 @@ def run_source(args):
         print()
 
     # 2. For each candidate: pull channel details, then run the EXISTING screen.
-    results = []
-    skipped = 0
+    results = []              # in-range, real count -> shown
+    needs_verification = []   # count genuinely unknown -> separate section
+    out_of_range = 0          # real count outside range -> dropped, never shown
     for c in candidates:
         handle = c["handle"]
         record = scrape_client.fetch_channel_profile(handle, live=args.live)
         result = screen_mod.screen_creator(record, args.brand)
         result["search_query"] = args.query
-
-        # 3. Apply subscriber filters on the authoritative count. When the
-        #    count is unknown (failed lookup / API didn't return it) we keep
-        #    the candidate visible rather than silently dropping it.
         subs = result.get("subscribers")
-        if subs is not None:
-            if args.min_subs is not None and subs < args.min_subs:
-                skipped += 1
-                continue
-            if args.max_subs is not None and subs > args.max_subs:
-                skipped += 1
-                continue
+
+        # 3a. Unknown count (None after retries): never range-filter a guess.
+        #     Route to the needs-verification section instead.
+        if subs is None:
+            needs_verification.append(result)
+            _print_result_line(f"{handle} (subs unknown -> verify manually)", result)
+            continue
+
+        # 3b. Real count: the range is a HARD filter. Out-of-range candidates
+        #     are dropped entirely and never appear in the output.
+        if args.min_subs is not None and subs < args.min_subs:
+            out_of_range += 1
+            continue
+        if args.max_subs is not None and subs > args.max_subs:
+            out_of_range += 1
+            continue
 
         results.append(result)
-        label = f"{handle} ({subs:,} subs)" if isinstance(subs, int) else f"{handle} (subs n/a)"
-        _print_result_line(label, result)
+        _print_result_line(f"{handle} ({subs:,} subs)", result)
 
-    if skipped:
-        print(f"\n  ({skipped} candidate(s) filtered out by the subscriber size filter.)")
+    if out_of_range:
+        print(f"\n  ({out_of_range} candidate(s) DROPPED — real count outside the "
+              "subscriber range; not shown.)")
+    if needs_verification:
+        print(f"\n  NEEDS VERIFICATION ({len(needs_verification)} creator(s) — "
+              "subscriber count could not be retrieved, so the range filter was "
+              "NOT applied):")
+        for r in needs_verification:
+            print(f"    {r['handle']}: count unknown")
 
-    if not results:
+    if not results and not needs_verification:
         print("\nNo candidates matched after filtering.", file=sys.stderr)
         return 1
 
-    out_path = report_mod.write_report(results, args.out, include_source_columns=True)
+    out_path = report_mod.write_report(
+        results, args.out, include_source_columns=True,
+        needs_verification=needs_verification,
+    )
     print(f"\nWrote color-coded report to: {out_path}")
-    _summarize(results)
+    print(f"In range: {len(results)} | needs verification: {len(needs_verification)} "
+          f"| dropped out of range: {out_of_range}")
+    if results:
+        _summarize(results)
     return 0
 
 

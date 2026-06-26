@@ -466,21 +466,42 @@ def _fetch_live(handle, months=None, max_videos=None):
     return _safe_live_fetch(handle, _inner)
 
 
+# A subscriber count of 0 / null / missing on the channel endpoint is usually a
+# transient miss, so we re-fetch the channel a couple of times before accepting
+# the count as genuinely unavailable. We never invent or estimate a number.
+_SUBS_RETRIES = 2
+
+
+def _positive_int(value):
+    """Return value if it's a positive int, else None (0/None/missing -> None)."""
+    return value if isinstance(value, int) and value > 0 else None
+
+
 def _fetch_channel_live(handle):
     """Lightweight source-mode fetch: channel details + country only.
 
-    Exactly one API lookup per candidate (predictable spend). Sponsor history
-    is NOT pulled here, so the conflict screen will report UNVERIFIED unless a
-    record already carries confirmed sponsors — by design, sourcing is a cheap
-    discovery pass; run screen mode on the shortlist for full CONFLICT/CLEAR
-    verdicts.
+    Exactly one lookup per candidate in the happy path. If the subscriber count
+    comes back 0/empty/missing, the channel call is retried once or twice with
+    backoff (transient misses are common) before the count is accepted as
+    genuinely unavailable. Sponsor history is NOT pulled here.
     """
     api_key = _require_api_key()
     clean_handle = handle.strip().lstrip("@")
 
     def _inner():
-        channel = _api_get("/v1/youtube/channel", {"handle": clean_handle}, api_key)
-        return _map_channel_basic(handle, channel)
+        channel = None
+        for attempt in range(_SUBS_RETRIES + 1):
+            channel = _api_get("/v1/youtube/channel", {"handle": clean_handle}, api_key)
+            if _positive_int(channel.get("subscriberCount")) is not None:
+                break  # got a real positive count
+            if attempt < _SUBS_RETRIES:
+                time.sleep(_RETRY_BACKOFF * (2 ** attempt))
+        record = _map_channel_basic(handle, channel)
+        # Accept the count only if it's a real positive number; otherwise leave
+        # it unknown (None) so the caller can route it to "needs verification"
+        # rather than range-filtering a 0/guess.
+        record["subscribers"] = _positive_int(channel.get("subscriberCount"))
+        return record
 
     return _safe_live_fetch(handle, _inner)
 
