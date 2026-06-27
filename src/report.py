@@ -172,6 +172,7 @@ _RADAR_COLUMNS = [
     ("Contact starting point", lambda r: r.get("contact_start") or "", 46, True),
     ("Brief category", lambda r: r.get("brief_category"), 24, False),
     ("Platform", lambda r: r.get("platforms"), 20, False),
+    ("Corroboration", lambda r: r.get("corroboration") or "", 22, False),
     ("Recent sponsorships (proof)", lambda r: r.get("proof") or "", 44, True),
     ("Live vs Evergreen", lambda r: r.get("recency_tag"), 18, False),
     ("Suggested roster fit", lambda r: r.get("suggested_fit") or "none", 30, True),

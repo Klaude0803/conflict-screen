@@ -485,6 +485,12 @@ def aggregate_radar(records, *, scan_months, conflict_months, roster=None,
         reach, contact = _reachability(
             display, len(e["creators"]), list(e["creator_subs"].values())
         )
+        # Corroboration strength is shown as a tag, not used to gate: for
+        # prospecting, a single live sponsorship is still a real lead. Every
+        # brand that clears the gambling / junk / confidence filters qualifies.
+        n_creators = len(e["creators"])
+        corroboration = ("single mention" if n_creators == 1
+                         else f"corroborated ({n_creators} creators)")
         row = {
             "brand": display,
             "brief_category": brief_cat,
@@ -493,29 +499,25 @@ def aggregate_radar(records, *, scan_months, conflict_months, roster=None,
             "recency_tag": tag,
             "reachability": reach,
             "contact_start": contact,
+            "corroboration": corroboration,
             "suggested_fit": ", ".join(sorted(fit)) if fit else "none",
             "roster_conflict": conflict,
             "most_recent_date": e["most_recent"] or "",
             "verification": "verified" if e["verified_any"] else "sample/unverified",
-            "distinct_creators": len(e["creators"]),
+            "distinct_creators": n_creators,
             "total_placements": e["placements"],
         }
-        # Trust into the main table if it's a known brand OR corroborated by
-        # 2+ creators; otherwise hold it as a single-mention unknown.
-        if categorized or len(e["creators"]) >= 2:
-            rows.append(row)
-        else:
-            single_mention.append(row)
+        rows.append(row)
 
-    # Sort by reachability (LIKELY DIRECT first), then by activity.
+    # Sort by reachability (LIKELY DIRECT first), then by corroboration strength
+    # (more creators first), then by placements.
     rows.sort(key=lambda r: (
         _REACH_RANK.get(r["reachability"], 1),
         -r["distinct_creators"], -r["total_placements"],
     ))
-    single_mention.sort(key=lambda r: (-r["total_placements"], r["brand"].lower()))
     stats = dict(dropped)
     stats["min_confidence"] = (min_confidence or "medium").lower()
     stats["excluded_for_review"] = len(excluded_for_review)
-    stats["single_mention"] = len(single_mention)
+    stats["single_mention"] = sum(1 for r in rows if r["distinct_creators"] == 1)
     review_list = [{"brand": b, "reason": r} for b, r in sorted(excluded_for_review.items())]
     return rows, review_list, single_mention, stats

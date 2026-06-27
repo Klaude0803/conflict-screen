@@ -634,23 +634,19 @@ def run_radar(args):
           f"{stats['generic']} generic, {stats['self_reference']} self-reference.")
 
     if rows:
-        print(f"\nRanked brands ({len(rows)}) — LIKELY DIRECT first:")
-        hdr = (f"  {'BRAND':<17}{'REACHABILITY':<16}{'CATEGORY':<24}"
-               f"{'PLATFORM':<20}{'TAG':<20}{'CONFLICT':<24}RECENT")
+        n_single = sum(1 for r in rows if r["distinct_creators"] == 1)
+        print(f"\nRanked brands ({len(rows)}) — LIKELY DIRECT first "
+              f"({n_single} single mention, {len(rows) - n_single} corroborated):")
+        hdr = (f"  {'BRAND':<17}{'REACHABILITY':<16}{'CORROBORATION':<24}"
+               f"{'CATEGORY':<24}{'TAG':<20}{'CONFLICT':<24}RECENT")
         print(hdr)
         for r in rows:
             print(f"  {r['brand'][:16]:<17}{r['reachability']:<16}"
-                  f"{r['brief_category'][:23]:<24}{r['platforms'][:19]:<20}"
+                  f"{r['corroboration'][:23]:<24}{r['brief_category'][:23]:<24}"
                   f"{r['recency_tag'][:19]:<20}{r['roster_conflict'][:23]:<24}"
                   f"{r['most_recent_date']}")
     else:
         print("\nNo brands surfaced after exclusions and filtering.")
-
-    if single_mention:
-        print(f"\nSINGLE MENTION — unverified ({len(single_mention)} unknown brand(s) "
-              "seen on only one creator; may be real, not yet corroborated):")
-        for r in single_mention:
-            print(f"  {r['brand']} ({r['most_recent_date']})")
 
     if review:
         print(f"\nEXCLUDED FOR REVIEW ({len(review)} borderline name(s)):")
