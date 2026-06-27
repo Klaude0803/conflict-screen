@@ -93,14 +93,38 @@ def _creator_names(handles):
     return [_display_name(h) for h in handles if _display_name(h)]
 
 
-def _creator_phrase(handles):
-    """Render up to two example creators as proof, by plain name."""
-    names = _creator_names(handles)
-    if len(names) >= 2:
-        return f"people like {names[0]} and {names[1]}"
+def _join_names(names):
+    """Join up to three plain names: 'A', 'A and B', or 'A, B and C'."""
+    names = names[:3]
+    if len(names) >= 3:
+        return f"{names[0]}, {names[1]} and {names[2]}"
+    if len(names) == 2:
+        return f"{names[0]} and {names[1]}"
     if len(names) == 1:
-        return f"people like {names[0]}"
+        return names[0]
     return "the bigger channels in this space"
+
+
+def _creator_phrase(handles):
+    """Render up to three example creators as proof, by plain name."""
+    names = _creator_names(handles)
+    if not names:
+        return "the bigger channels in this space"
+    return f"people like {_join_names(names)}"
+
+
+def _proof_sentence(names, when, proof_count):
+    """A concrete proof sentence leading with what the creators are running."""
+    joined = _join_names(names)
+    if len(names) >= 2:
+        verb = "have all run it" if len(names) >= 3 else "have both run it"
+    elif len(names) == 1:
+        verb = "is running it"
+    else:
+        return f"The cadence runs right into {when}."
+    if proof_count:
+        return f"{joined} {verb}, {proof_count} placements in {when} alone."
+    return f"{joined} {verb}, with the pace picking up into {when}."
 
 
 def _subject_options(brand):
@@ -123,23 +147,28 @@ def _subject_options(brand):
     return chosen
 
 
-def _body(brand, category, recent, handles):
-    """One email body, 75 to 110 words, no hyphens, exactly one CTA."""
-    niche = (category or "this niche").strip()
-    proof = _creator_phrase(handles)
+def _space_word(audience, category):
+    """The space the CREATORS are in (e.g. football), not the brand category."""
+    return (audience or category or "this space").strip()
+
+
+def _body(brand, category, recent, handles, audience=None, proof_count=None):
+    """Opener body, 75 to 110 words, no hyphens, exactly one CTA. Leads with
+    what the brand is already doing with the creators, not the sender."""
+    space = _space_word(audience, category)
+    names = _creator_names(handles)
     when = _format_recent(recent)
+    proof = _proof_sentence(names, when, proof_count)
 
     body = (
         f"Hi {brand} team,\n\n"
-        f"I have been watching how {brand} keeps surfacing across {niche} "
-        f"creators, and the pattern is clear. Placements with {proof} run into "
-        f"{when}, so someone there already treats creators as a real channel, "
-        f"not a test.\n\n"
-        f"I spend my days close to creators in exactly this lane, so I hear "
-        f"early where {brand} lands well and where it leaves money on the "
-        f"table. That view might be useful to you, or it might not.\n\n"
-        f"Either way there is no pressure. Worth a short conversation this "
-        f"week?\n\n"
+        f"{brand} is already live across {space} right now, and the cadence is "
+        f"hard to miss. {proof} That reads less like a test and more like "
+        f"someone there already treating creators as a real channel.\n\n"
+        f"I spend my days close to {space} creators, so I tend to see where "
+        f"{brand} lands well and where it leaves reach on the table. That view "
+        f"might be useful to you, or it might not.\n\n"
+        f"No pressure either way. Worth a short conversation this week?\n\n"
         f"Best,\nYour name"
     )
     return body
@@ -150,7 +179,8 @@ def _word_count(body):
     return len(body.split())
 
 
-def build_draft(brand, category=None, recent=None, creators=None):
+def build_draft(brand, category=None, recent=None, creators=None,
+                audience=None, proof_count=None):
     """Build and validate an outreach draft for a brand.
 
     Returns {"brand", "subjects", "body", "word_count"}. Raises ValueError if
@@ -163,7 +193,8 @@ def build_draft(brand, category=None, recent=None, creators=None):
     handles = creators or []
 
     subjects = _subject_options(brand)
-    body = _body(brand, category, recent, handles)
+    body = _body(brand, category, recent, handles, audience=audience,
+                 proof_count=proof_count)
 
     # --- Validate the hard constraints before returning ------------------
     for s in subjects:
@@ -227,9 +258,12 @@ def write_draft(draft, out_path, category=None, recent=None, creators=None):
 # new, carries exactly one CTA, and uses plain creator names (no @ handles)
 # and no hyphens.
 # ===========================================================================
-def _touch1_subject(brand):
+def _touch1_subject(brand, audience=None):
     """One spicy, curiosity-driven subject under 60 chars, no hyphens."""
-    candidates = [
+    candidates = []
+    if audience:
+        candidates.append(f"{brand} is quietly all over {audience}")
+    candidates += [
         f"the {brand} pattern nobody is naming",
         f"{brand} keeps showing up lately",
         f"noticed what {brand} is doing",
@@ -245,45 +279,63 @@ def _signoff():
     return "\n\nBest,\nYour name"
 
 
-def _touch_bodies(brand, category, recent, handles):
+# Category-aware activation concept for touch 3, stated inline. Keyed by a
+# lowercased category substring; falls back to a neutral on-camera moment.
+def _activation_concept(category, brand, c1):
+    cat = (category or "").lower()
+    if "vpn" in cat or "privacy" in cat:
+        return (f"{c1} hits a blackout on a match they are already watching, "
+                f"opens {brand} on camera, and is back in seconds")
+    if "ticket" in cat:
+        return (f"{c1} scores seats to a match on {brand} live on camera and "
+                f"takes the audience to the game, no script")
+    if "apparel" in cat or "footwear" in cat or "merch" in cat or "kit" in cat:
+        return (f"{c1} pulls on the new {brand} kit on camera in the moment it "
+                f"actually matters, not a studio unboxing")
+    if "gaming" in cat:
+        return (f"{c1} drops into {brand} on stream and the audience plays "
+                f"along in real time, not a scripted plug")
+    return (f"{c1} uses {brand} on camera for something they were going to do "
+            f"anyway, with zero script")
+
+
+def _touch_bodies(brand, category, recent, handles, audience=None, proof_count=None):
     """The six touch bodies, each leading with something new. No hyphens,
     one CTA each. Returns a list of (body, whats_new)."""
-    niche = (category or "this niche").strip()
-    proof = _creator_phrase(handles)
+    space = _space_word(audience, category)
     names = _creator_names(handles)
+    proof_names = _join_names(names) if names else "the bigger channels here"
     c1 = names[0] if names else "the bigger channels here"
 
     # Touch 1 — opener (reuses the single-email body engine).
-    t1 = _body(brand, category, recent, handles)
+    t1 = _body(brand, category, recent, handles, audience=audience,
+               proof_count=proof_count)
 
-    # Touch 2 — one new audience insight.
+    # Touch 2 — one new audience insight (category neutral).
     t2 = (
         f"Hi {brand} team,\n\n"
-        f"One thing I left out of my note. The audience around {niche} "
-        f"creators like {proof.replace('people like ', '')} over indexes on "
-        f"viewers who travel and stream across regions, which is the exact "
-        f"moment a VPN earns its keep. That intent is hard to buy with paid "
-        f"media and easy to ride with the right creator read. Want me to send "
-        f"the two names I would start with?"
+        f"One thing I left out of my note. The audience around {space} creators "
+        f"like {proof_names} is exactly the crowd most likely to act on {brand}, "
+        f"the kind of intent that is hard to buy with paid media and easy to "
+        f"earn with the right creator read. Want me to send the names I would "
+        f"start with?"
         + _signoff()
     )
-    nw2 = "Adds an audience insight: this niche over indexes on travelers and cross region streamers."
+    nw2 = f"Adds an audience insight: this {space} audience is high intent for {brand}."
 
-    # Touch 3 — a completely different frame, with the concept DELIVERED
-    # inline (stated concretely) rather than offered for later. The single CTA
-    # is a soft close, not a request to send anything.
+    # Touch 3 — a completely different frame, concept DELIVERED inline. Single
+    # CTA is a soft close, not a request to send anything.
+    concept = _activation_concept(category, brand, c1)
     t3 = (
         f"Hi {brand} team,\n\n"
-        f"Different angle, and here is the actual concept rather than a tease. "
-        f"{c1} hits a blackout on a match they are already watching, opens "
-        f"{brand} on camera, and is back in under ten seconds. No script, no "
-        f"studio, one real moment instead of a feature list. That is the read "
-        f"that reframes {brand} from a tool into a reflex, and it travels "
-        f"across every creator in this lane. If that direction fits how you see "
-        f"it, worth a quick word?"
+        f"Different angle, and here is the concept rather than a tease. "
+        f"{concept}. No studio, one real moment instead of a feature list. That "
+        f"is the read that turns {brand} from a logo into part of the story, and "
+        f"it travels across every creator in {space}. If that direction fits how "
+        f"you see it, worth a quick word?"
         + _signoff()
     )
-    nw3 = "States the activation concept inline: the on camera blackout moment, delivered not offered."
+    nw3 = "States the activation concept inline, delivered not offered."
 
     # Touch 4 — reduce friction: routing / yes or no.
     t4 = (
@@ -298,7 +350,7 @@ def _touch_bodies(brand, category, recent, handles):
     t5 = (
         f"Hi {brand} team,\n\n"
         f"Last useful thing from me. I wrote up the shortlist logic I would use "
-        f"to pick {niche} creators for {brand}: how I weigh audience intent, "
+        f"to pick {space} creators for {brand}: how I weigh audience intent, "
         f"conflict history, and pricing, so the choices are not a guess. It is "
         f"a short read and yours either way. Want me to drop it in your inbox?"
         + _signoff()
@@ -309,14 +361,14 @@ def _touch_bodies(brand, category, recent, handles):
     t6 = (
         f"Hi {brand} team,\n\n"
         f"I will close the loop here so I am not crowding your inbox. The "
-        f"pattern I flagged around {brand} and {niche} creators stays true "
+        f"pattern I flagged around {brand} and {space} creators stays true "
         f"whenever the timing is right on your side. Should I close the file on "
         f"this, or is there a better person for me to pass it to?"
         + _signoff()
     )
     nw6 = "Closes the loop and offers a referral or an easy opt out."
 
-    return [(t1, "Opens the thread with the core relevance pattern and one ask."),
+    return [(t1, "Opens the thread leading with what the brand is already doing."),
             (t2, nw2), (t3, nw3), (t4, nw4), (t5, nw5), (t6, nw6)]
 
 
@@ -331,7 +383,8 @@ _TOUCH_META = [
 ]
 
 
-def build_sequence(brand, category=None, recent=None, creators=None):
+def build_sequence(brand, category=None, recent=None, creators=None,
+                   audience=None, proof_count=None):
     """Build and validate a full six touch follow up sequence.
 
     Returns {"brand", "touches": [...]} where each touch has n, day, label,
@@ -343,14 +396,15 @@ def build_sequence(brand, category=None, recent=None, creators=None):
         raise ValueError("A brand name is required to draft a sequence.")
     handles = creators or []
 
-    t1_subject = _touch1_subject(brand)
+    t1_subject = _touch1_subject(brand, audience=audience)
     if "-" in t1_subject or len(t1_subject) >= 60:
         raise ValueError(f"Touch 1 subject invalid: {t1_subject!r}")
     thread_subject = f"re: {t1_subject}"
     if "-" in thread_subject:
         raise ValueError("Thread subject contains a hyphen.")
 
-    bodies = _touch_bodies(brand, category, recent, handles)
+    bodies = _touch_bodies(brand, category, recent, handles, audience=audience,
+                           proof_count=proof_count)
     touches = []
     for i, (body, whats_new) in enumerate(bodies, start=1):
         day, label = _TOUCH_META[i - 1]

@@ -106,6 +106,15 @@ def parse_args(argv=None):
         help="(draft mode) Most recent placement date, from the market radar.",
     )
     p.add_argument(
+        "--audience",
+        help="(draft mode) The space the creators are in, e.g. football. Used "
+             "in copy as '<audience> creators' (distinct from --category).",
+    )
+    p.add_argument(
+        "--proof-count", type=int, default=None,
+        help="(draft mode) Number of placements, woven into touch 1 as proof.",
+    )
+    p.add_argument(
         "--market-csv",
         help="(draft mode) Optional market-radar CSV to auto-pull the brand row.",
     )
@@ -470,6 +479,7 @@ def run_draft(args):
     if args.sequence:
         seq = outreach_mod.build_sequence(
             args.brand, category=category, recent=recent, creators=creators,
+            audience=args.audience, proof_count=args.proof_count,
         )
         out_path = outreach_mod.write_sequence(
             seq, args.out, category=category, recent=recent, creators=creators,
@@ -481,6 +491,7 @@ def run_draft(args):
     else:
         draft = outreach_mod.build_draft(
             args.brand, category=category, recent=recent, creators=creators,
+            audience=args.audience, proof_count=args.proof_count,
         )
         out_path = outreach_mod.write_draft(
             draft, args.out, category=category, recent=recent, creators=creators,
