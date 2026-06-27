@@ -132,9 +132,11 @@ GAMBLING_PATTERNS = [
     "casino", "slots", "roulette", "blackjack", "poker", "888casino",
     "luckyland", "chumba", "pulsz", "wow vegas", "high 5 casino", "mcluck",
     "stake.us", "sweepstakes casino", "social casino",
-    # Odds / tipsters
+    # Odds / tipsters / bookmakers
     "tipster", "betting tips", "free bets", "free bet", "odds boost",
     "no sweat bet", "parlay pick", "betting picks", "sure bet",
+    "sportsbook", "sports book", "sports books", "sportsbooks",
+    "bookmaker", "bookmakers", "bookie", "betting site", "betting app",
     # Real-money / cash fantasy & prediction / cash free-to-play
     "prizepicks", "underdog fantasy", "dream11", "my11circle", "mpl ",
     "mobile premier league", "rush fantasy", "sleeper picks", "betr picks",

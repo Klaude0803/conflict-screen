@@ -199,11 +199,17 @@ def _radar_fill(row):
     return None  # n/a (no roster) -> uncolored
 
 
-def write_radar_report(rows, out_path, excluded_for_review=None):
-    """Write the football radar: ranked brand sheet + excluded-for-review sheet."""
+def write_radar_report(rows, out_path, excluded_for_review=None,
+                       single_mention=None):
+    """Write the football radar: ranked brand sheet, a single-mention sheet for
+    unknown brands only one creator ran, and an excluded-for-review sheet."""
     wb = Workbook()
     _render_sheet(wb.active, "Football Radar", _RADAR_COLUMNS, rows,
                   fill_for=_radar_fill)
+    if single_mention:
+        _render_sheet(wb.create_sheet("Single mention (unverified)"),
+                      "Single mention (unverified)", _RADAR_COLUMNS,
+                      single_mention, fill_for=lambda r: _FILLS[conflict_mod.UNVERIFIED])
     review = wb.create_sheet("Excluded for review")
     _render_sheet(review, "Excluded for review", _REVIEW_COLUMNS,
                   excluded_for_review or [], fill_for=lambda r: _FILLS[conflict_mod.UNVERIFIED])

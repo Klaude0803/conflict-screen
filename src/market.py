@@ -26,6 +26,18 @@ _GENERIC_PHRASES = {
     "sponsor", "sponsors", "today's sponsor", "todays sponsor",
 }
 
+# Caption / transcript fragments the YouTube suspectedSponsors endpoint emits
+# that are clearly not brand names. Dropped, never relabeled. Lowercased exact
+# match (after stripping), so real brands are unaffected.
+_JUNK_NAMES = {
+    "our", "co", "our friends over", "friends", "checkout", "check out",
+    "onelink", "one link", "link", "links", "code", "promo", "promo code",
+    "discount", "discount code", "today", "video", "subscribe", "channel",
+    "guys", "ad", "advert", "advertisement", "partner", "partners", "deal",
+    "accomplished", "sideline", "the sideline", "our channel", "this video",
+    "click", "click the link", "description", "down below", "below",
+}
+
 
 def _confidence_rank(value):
     return _CONFIDENCE_RANK.get((value or "").strip().lower(), 0)
@@ -372,7 +384,7 @@ def aggregate_radar(records, *, scan_months, conflict_months, roster=None,
     # 2. Aggregate sponsors across all records (within the scan window).
     brands = {}
     dropped = {"low_confidence": 0, "generic": 0, "self_reference": 0,
-               "gambling": 0}
+               "gambling": 0, "junk": 0}
     excluded_for_review = {}  # brand display -> reason
 
     for rec in records:
@@ -394,8 +406,8 @@ def aggregate_radar(records, *, scan_months, conflict_months, roster=None,
             if reason:
                 excluded_for_review.setdefault(name, reason)
                 continue
-            if _is_generic(name):
-                dropped["generic"] += 1
+            if _is_generic(name) or name.strip().lower() in _JUNK_NAMES:
+                dropped["generic" if _is_generic(name) else "junk"] += 1
                 continue
             if _is_self_reference(name, channel_tokens):
                 dropped["self_reference"] += 1
@@ -433,7 +445,13 @@ def aggregate_radar(records, *, scan_months, conflict_months, roster=None,
                 e["most_recent"] = date
 
     # 3. Build rows: brief category, recency tag (drop > 6mo), conflict, fit.
+    #    Corroboration gate: an UNKNOWN brand (no brief category) is only trusted
+    #    in the main table when >=2 distinct creators ran it. Single-mention
+    #    unknown brands go to a separate "single mention" section rather than
+    #    being trusted or silently dropped — they may be real, just unconfirmed.
+    UNCATEGORIZED = "uncategorized (brief)"
     rows = []
+    single_mention = []
     for e in brands.values():
         display = max(e["names"].items(), key=lambda kv: kv[1])[0]
         brief_cat = config.brief_category_for(display)
@@ -441,12 +459,15 @@ def aggregate_radar(records, *, scan_months, conflict_months, roster=None,
         if tag is None:
             continue  # older than 6 months -> dropped from this run
 
-        # Roster conflict: a roster creator already ran this brand or its
-        # brief category within the conflict window.
+        # Roster conflict: a roster creator already ran this exact brand, or a
+        # brand in the same KNOWN brief category. Uncategorized brands only
+        # conflict on an exact brand match (two unknown brands are not the same
+        # category just because both are "uncategorized").
         brand_key = _norm_key(display)
+        categorized = brief_cat != UNCATEGORIZED
         conflicted = [h for h in roster_words
                       if brand_key in roster_brands.get(h, set())
-                      or brief_cat in roster_history.get(h, set())]
+                      or (categorized and brief_cat in roster_history.get(h, set()))]
         if conflicted:
             conflict = "CONFLICT (" + ", ".join(sorted(conflicted)) + ")"
         elif roster_words and roster_confirmed >= set(roster_words):
@@ -456,19 +477,15 @@ def aggregate_radar(records, *, scan_months, conflict_months, roster=None,
         else:
             conflict = "UNVERIFIED"
 
-        # Suggested fit: roster creators whose tag words intersect the brief
-        # category's fit tags. Rules-based from the supplied tags.
         fit_tags = BRIEF_CATEGORY_FIT_TAGS.get(brief_cat, set())
         fit = [h for h, words in roster_words.items() if words & fit_tags]
-
         proof = "; ".join(
             f"{h} on {pf} ({_fmt_month(d)})" for h, d, pf in e["examples"]
         )
-        # Reachability tier from creator mix + brand size (real signal only).
         reach, contact = _reachability(
             display, len(e["creators"]), list(e["creator_subs"].values())
         )
-        rows.append({
+        row = {
             "brand": display,
             "brief_category": brief_cat,
             "platforms": ", ".join(sorted(e["platforms"])),
@@ -482,15 +499,23 @@ def aggregate_radar(records, *, scan_months, conflict_months, roster=None,
             "verification": "verified" if e["verified_any"] else "sample/unverified",
             "distinct_creators": len(e["creators"]),
             "total_placements": e["placements"],
-        })
+        }
+        # Trust into the main table if it's a known brand OR corroborated by
+        # 2+ creators; otherwise hold it as a single-mention unknown.
+        if categorized or len(e["creators"]) >= 2:
+            rows.append(row)
+        else:
+            single_mention.append(row)
 
     # Sort by reachability (LIKELY DIRECT first), then by activity.
     rows.sort(key=lambda r: (
         _REACH_RANK.get(r["reachability"], 1),
         -r["distinct_creators"], -r["total_placements"],
     ))
+    single_mention.sort(key=lambda r: (-r["total_placements"], r["brand"].lower()))
     stats = dict(dropped)
     stats["min_confidence"] = (min_confidence or "medium").lower()
     stats["excluded_for_review"] = len(excluded_for_review)
+    stats["single_mention"] = len(single_mention)
     review_list = [{"brand": b, "reason": r} for b, r in sorted(excluded_for_review.items())]
-    return rows, review_list, stats
+    return rows, review_list, single_mention, stats

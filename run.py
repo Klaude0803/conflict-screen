@@ -17,6 +17,7 @@ needed). Pass --live to use the real Scrape Creators API.
 
 import argparse
 import csv
+import json
 import sys
 from collections import Counter
 
@@ -77,6 +78,10 @@ def parse_args(argv=None):
     p.add_argument(
         "--plan-only", action="store_true",
         help="(radar mode) Print the planned live lookup count and exit (no spend).",
+    )
+    p.add_argument(
+        "--from-cache",
+        help="(radar mode) Re-aggregate from a cached records JSON (no API calls).",
     )
     p.add_argument(
         "--draft", action="store_true",
@@ -544,32 +549,30 @@ def run_radar(args):
     print(f"Caps — creators/platform: {args.limit}, videos/creator: "
           f"{args.videos_per_creator}, min-confidence: {args.min_confidence}\n")
 
-    # --- Cost control: print the exact planned live lookups. ----------------
-    # Per-platform creators = roster handles + up to --limit search results.
-    planned_creators = {}
-    for pf in platforms:
-        planned_creators[pf] = min(args.limit, args.limit) + len(roster)
-    search_calls = sum(len(queries) for _ in platforms)
-    fetch_calls = sum(
-        planned_creators[pf] * _per_creator_lookups(pf, args.videos_per_creator)
-        for pf in platforms
-    )
-    total_planned = search_calls + fetch_calls
-    print("PLANNED LIVE LOOKUPS (upper bound):")
-    for pf in platforms:
-        per = _per_creator_lookups(pf, args.videos_per_creator)
-        print(f"  {pf}: {len(queries)} search + {planned_creators[pf]} creators x "
-              f"~{per} lookups = ~{len(queries) + planned_creators[pf]*per}")
-    print(f"  TOTAL upper bound: ~{total_planned} live lookups "
-          f"(search {search_calls} + per-creator {fetch_calls}).")
-    if args.plan_only:
-        print("\n--plan-only set: stopping before any live calls. No spend.")
-        return 0
-    print()
+    # --- Cost control: print the exact planned live lookups (skip on cache). -
+    if not args.from_cache:
+        planned_creators = {pf: args.limit + len(roster) for pf in platforms}
+        search_calls = sum(len(queries) for _ in platforms)
+        fetch_calls = sum(
+            planned_creators[pf] * _per_creator_lookups(pf, args.videos_per_creator)
+            for pf in platforms
+        )
+        total_planned = search_calls + fetch_calls
+        print("PLANNED LIVE LOOKUPS (upper bound):")
+        for pf in platforms:
+            per = _per_creator_lookups(pf, args.videos_per_creator)
+            print(f"  {pf}: {len(queries)} search + {planned_creators[pf]} creators x "
+                  f"~{per} lookups = ~{len(queries) + planned_creators[pf]*per}")
+        print(f"  TOTAL upper bound: ~{total_planned} live lookups "
+              f"(search {search_calls} + per-creator {fetch_calls}).")
+        if args.plan_only:
+            print("\n--plan-only set: stopping before any live calls. No spend.")
+            return 0
+        print()
 
     # --- Gather creators per platform (roster + deduped search). -----------
     to_fetch = []  # (handle, platform, is_roster)
-    for pf in platforms:
+    for pf in (platforms if not args.from_cache else []):
         seen = set()
         for h in roster:
             seen.add(h.lower())
@@ -588,54 +591,75 @@ def run_radar(args):
                         break
                 if picked >= args.limit:
                     break
-    print(f"Gathered {len(to_fetch)} (creator, platform) pairs to scan.\n")
+    if not args.from_cache:
+        print(f"Gathered {len(to_fetch)} (creator, platform) pairs to scan.\n")
 
-    # --- Fetch each creator's sponsors on its platform. --------------------
+    # --- Fetch each creator's sponsors, or load cached records (no spend). --
+    cache_path = args.out + ".records.json"
     records, skipped = [], 0
-    for handle, pf, is_roster in to_fetch:
-        months = conflict_months if is_roster else scan_months
-        rec = scrape_client.radar_fetch(
-            handle, pf, live=args.live, months=months,
-            max_videos=args.videos_per_creator,
-        )
-        if rec.get("error"):
-            skipped += 1
-            print(f"  {handle} [{pf}]: UNVERIFIED (skipped) — {rec['error']}")
-            continue
-        records.append(rec)
-        n = len(rec.get("recent_sponsors") or [])
-        print(f"  {handle} [{rec.get('platform')}]: {n} sponsor placement(s)")
+    if args.from_cache:
+        with open(args.from_cache, encoding="utf-8") as f:
+            records = json.load(f)
+        print(f"Loaded {len(records)} cached record(s) from {args.from_cache} "
+              "(no API calls).\n")
+    else:
+        for handle, pf, is_roster in to_fetch:
+            months = conflict_months if is_roster else scan_months
+            rec = scrape_client.radar_fetch(
+                handle, pf, live=args.live, months=months,
+                max_videos=args.videos_per_creator,
+            )
+            if rec.get("error"):
+                skipped += 1
+                print(f"  {handle} [{pf}]: UNVERIFIED (skipped) — {rec['error']}")
+                continue
+            records.append(rec)
+            n = len(rec.get("recent_sponsors") or [])
+            print(f"  {handle} [{rec.get('platform')}]: {n} sponsor placement(s)")
+        # Cache raw records so the scan can be re-filtered later for free.
+        with open(cache_path, "w", encoding="utf-8") as f:
+            json.dump(records, f)
+        print(f"\nCached raw records to {cache_path} "
+              "(re-filter for free with --from-cache).")
 
     # --- Aggregate into the radar table. -----------------------------------
-    rows, review, stats = market_mod.aggregate_radar(
+    rows, review, single_mention, stats = market_mod.aggregate_radar(
         records, scan_months=scan_months, conflict_months=conflict_months,
         roster=roster, min_confidence=args.min_confidence,
     )
 
     print(f"\nScanned {len(records)} creator-platform record(s); {skipped} skipped.")
-    print(f"Dropped: {stats['gambling']} gambling (hard), "
-          f"{stats['low_confidence']} below confidence, {stats['generic']} generic, "
-          f"{stats['self_reference']} self-reference.")
+    print(f"Dropped: {stats['gambling']} gambling (hard), {stats['junk']} junk "
+          f"fragments, {stats['low_confidence']} below confidence, "
+          f"{stats['generic']} generic, {stats['self_reference']} self-reference.")
 
     if rows:
         print(f"\nRanked brands ({len(rows)}) — LIKELY DIRECT first:")
         hdr = (f"  {'BRAND':<17}{'REACHABILITY':<16}{'CATEGORY':<24}"
-               f"{'PLATFORM':<20}{'TAG':<20}{'CONFLICT':<22}RECENT")
+               f"{'PLATFORM':<20}{'TAG':<20}{'CONFLICT':<24}RECENT")
         print(hdr)
         for r in rows:
             print(f"  {r['brand'][:16]:<17}{r['reachability']:<16}"
                   f"{r['brief_category'][:23]:<24}{r['platforms'][:19]:<20}"
-                  f"{r['recency_tag'][:19]:<20}{r['roster_conflict'][:21]:<22}"
+                  f"{r['recency_tag'][:19]:<20}{r['roster_conflict'][:23]:<24}"
                   f"{r['most_recent_date']}")
     else:
         print("\nNo brands surfaced after exclusions and filtering.")
+
+    if single_mention:
+        print(f"\nSINGLE MENTION — unverified ({len(single_mention)} unknown brand(s) "
+              "seen on only one creator; may be real, not yet corroborated):")
+        for r in single_mention:
+            print(f"  {r['brand']} ({r['most_recent_date']})")
 
     if review:
         print(f"\nEXCLUDED FOR REVIEW ({len(review)} borderline name(s)):")
         for x in review:
             print(f"  {x['brand']}: {x['reason']}")
 
-    out_path = report_mod.write_radar_report(rows, args.out, excluded_for_review=review)
+    out_path = report_mod.write_radar_report(
+        rows, args.out, excluded_for_review=review, single_mention=single_mention,
+    )
     print(f"\nWrote radar report to: {out_path}")
     return 0
 
