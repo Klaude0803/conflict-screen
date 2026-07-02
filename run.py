@@ -518,25 +518,37 @@ def run_draft(args):
 
 
 def _read_roster(path):
-    """Read a roster CSV: each row a handle plus comma-separated niche tags.
+    """Read a roster CSV into {handle: [tags]}.
 
-    Accepts either a 2-column 'handle,tags' file or a row where the first cell
-    is the handle and the rest are tags. Returns {handle: [tags]}.
+    Header-aware. If a 'tags' column exists, tags come ONLY from it (so a
+    'creator_name' column is never mistaken for a tag), plus any extra unnamed
+    columns for the older unquoted 'handle,tag,tag,...' style. If there's no
+    'tags' column, every non-handle column is treated as tags.
     """
     roster = {}
     with open(path, newline="", encoding="utf-8") as f:
-        reader = csv.reader(f)
+        reader = csv.DictReader(f)
+        fields = [x.lower() for x in (reader.fieldnames or [])]
+        has_tags = "tags" in fields
         for row in reader:
-            cells = [c.strip() for c in row if c is not None]
-            cells = [c for c in cells if c != ""]
-            if not cells:
+            handle = (row.get("handle") or row.get("Handle") or "").strip().lstrip("@")
+            if not handle:
                 continue
-            handle = cells[0].lstrip("@")
-            if handle.lower() in ("handle", "creator"):
-                continue  # header row
             tags = []
-            for c in cells[1:]:
-                tags += [t.strip() for t in c.split(",") if t.strip()]
+            if has_tags:
+                # The named 'tags' cell (may itself be comma-separated).
+                tags_cell = row.get("tags") or row.get("Tags") or ""
+                tags += [t.strip() for t in tags_cell.split(",") if t.strip()]
+                # Extra unnamed columns beyond the header (old unquoted style).
+                extra = row.get(None)
+                if isinstance(extra, list):
+                    for cell in extra:
+                        tags += [t.strip() for t in (cell or "").split(",") if t.strip()]
+            else:
+                for key, val in row.items():
+                    if key is None or (key or "").lower() == "handle" or not val:
+                        continue
+                    tags += [t.strip() for t in str(val).split(",") if t.strip()]
             roster[handle] = tags
     return roster
 
