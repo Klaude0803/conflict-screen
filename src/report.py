@@ -183,6 +183,21 @@ _RADAR_COLUMNS = [
     ("Total placements", lambda r: r.get("total_placements"), 16, False),
 ]
 
+# Creators-mode column set: scanning your OWN roster to see which brands
+# sponsor them. No roster-conflict column (it would be trivially true), and
+# Corroboration means "how many of my creators ran it".
+_RADAR_COLUMNS_CREATORS = [
+    ("Brand", lambda r: r.get("brand"), 22, False),
+    ("Category", lambda r: r.get("brief_category"), 24, False),
+    ("Corroboration", lambda r: r.get("corroboration") or "", 24, False),
+    ("Live vs Evergreen", lambda r: r.get("recency_tag"), 18, False),
+    ("Reachability", lambda r: r.get("reachability") or "", 16, False),
+    ("Suggested roster fit", lambda r: r.get("suggested_fit") or "none", 34, True),
+    ("Most recent date", lambda r: r.get("most_recent_date") or "", 16, False),
+    ("Proof (creator and date)", lambda r: r.get("proof") or "", 44, True),
+    ("Verification", lambda r: r.get("verification"), 18, False),
+]
+
 _REVIEW_COLUMNS = [
     ("Brand (EXCLUDED FOR REVIEW)", lambda r: r.get("brand"), 32, False),
     ("Reason", lambda r: r.get("reason"), 70, True),
@@ -201,15 +216,20 @@ def _radar_fill(row):
 
 
 def write_radar_report(rows, out_path, excluded_for_review=None,
-                       single_mention=None):
+                       single_mention=None, creators_mode=False):
     """Write the football radar: ranked brand sheet, a single-mention sheet for
-    unknown brands only one creator ran, and an excluded-for-review sheet."""
+    unknown brands only one creator ran, and an excluded-for-review sheet.
+
+    ``creators_mode`` uses the lean column set for scanning your own roster
+    (Corroboration = how many of your creators ran the brand; no conflict col).
+    """
+    cols = _RADAR_COLUMNS_CREATORS if creators_mode else _RADAR_COLUMNS
+    title = "Creators Radar" if creators_mode else "Football Radar"
     wb = Workbook()
-    _render_sheet(wb.active, "Football Radar", _RADAR_COLUMNS, rows,
-                  fill_for=_radar_fill)
+    _render_sheet(wb.active, title, cols, rows, fill_for=_radar_fill)
     if single_mention:
         _render_sheet(wb.create_sheet("Single mention (unverified)"),
-                      "Single mention (unverified)", _RADAR_COLUMNS,
+                      "Single mention (unverified)", cols,
                       single_mention, fill_for=lambda r: _FILLS[conflict_mod.UNVERIFIED])
     review = wb.create_sheet("Excluded for review")
     _render_sheet(review, "Excluded for review", _REVIEW_COLUMNS,

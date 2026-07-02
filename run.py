@@ -72,6 +72,12 @@ def parse_args(argv=None):
         help="(radar mode) CSV: each row a creator handle plus comma-separated niche tags.",
     )
     p.add_argument(
+        "--creators-mode", action="store_true",
+        help="(radar mode) Scan ONLY your --roster creators (no topic search) and "
+             "rank the brands sponsoring them. Corroboration = how many of your "
+             "creators ran each brand; no roster-conflict column.",
+    )
+    p.add_argument(
         "--platforms", default="youtube",
         help="(radar mode) Comma-separated platforms: youtube,tiktok,instagram.",
     )
@@ -161,10 +167,15 @@ def parse_args(argv=None):
     if args.sequence:
         args.draft = True
 
+    if args.creators_mode:
+        args.radar = True  # creators-mode is a radar variant
+
     if sum(bool(m) for m in (args.source, args.market, args.draft, args.radar)) > 1:
         p.error("choose one mode: --source, --market, --radar, or --draft.")
 
     if args.radar:
+        if args.creators_mode and not args.roster:
+            p.error("--creators-mode requires --roster.")
         if not (args.query or args.roster):
             p.error("--radar requires --query and/or --roster.")
     elif args.draft:
@@ -548,10 +559,12 @@ def run_radar(args):
     mode = "LIVE" if args.live else "MOCK (sample data)"
     platforms = [p.strip() for p in args.platforms.split(",") if p.strip()]
     queries = [q.strip() for q in (args.query or "").split(",") if q.strip()]
+    if args.creators_mode:
+        queries = []  # scan only the roster creators, no topic search
     roster = _read_roster(args.roster) if args.roster else {}
     scan_months, conflict_months = args.months, 12
 
-    print("Football brand radar")
+    print("Creators radar (your roster)" if args.creators_mode else "Football brand radar")
     print(f"Mode: {mode}")
     print(f"Platforms: {', '.join(platforms)}")
     print(f"Queries: {queries or '(roster only)'}")
@@ -562,8 +575,13 @@ def run_radar(args):
 
     # --- Cost control: print the exact planned live lookups (skip on cache). -
     if not args.from_cache:
-        planned_creators = {pf: args.limit + len(roster) for pf in platforms}
-        search_calls = sum(len(queries) for _ in platforms)
+        # Creators mode scans only the roster (no search); otherwise it's up to
+        # --limit search results plus the roster, per platform.
+        if args.creators_mode:
+            planned_creators = {pf: len(roster) for pf in platforms}
+        else:
+            planned_creators = {pf: args.limit + len(roster) for pf in platforms}
+        search_calls = 0 if args.creators_mode else sum(len(queries) for _ in platforms)
         fetch_calls = sum(
             planned_creators[pf] * _per_creator_lookups(pf, args.videos_per_creator)
             for pf in platforms
@@ -648,13 +666,17 @@ def run_radar(args):
         n_single = sum(1 for r in rows if r["distinct_creators"] == 1)
         print(f"\nRanked brands ({len(rows)}) — LIKELY DIRECT first "
               f"({n_single} single mention, {len(rows) - n_single} corroborated):")
+        # In creators mode the last column is FIT (conflict is meaningless when
+        # scanning your own roster); otherwise it's the roster CONFLICT flag.
+        last_head = "FIT" if args.creators_mode else "CONFLICT"
         hdr = (f"  {'BRAND':<17}{'REACHABILITY':<16}{'CORROBORATION':<24}"
-               f"{'CATEGORY':<24}{'TAG':<20}{'CONFLICT':<24}RECENT")
+               f"{'CATEGORY':<24}{'TAG':<20}{last_head:<28}RECENT")
         print(hdr)
         for r in rows:
+            last = r["suggested_fit"] if args.creators_mode else r["roster_conflict"]
             print(f"  {r['brand'][:16]:<17}{r['reachability']:<16}"
                   f"{r['corroboration'][:23]:<24}{r['brief_category'][:23]:<24}"
-                  f"{r['recency_tag'][:19]:<20}{r['roster_conflict'][:23]:<24}"
+                  f"{r['recency_tag'][:19]:<20}{str(last)[:27]:<28}"
                   f"{r['most_recent_date']}")
     else:
         print("\nNo brands surfaced after exclusions and filtering.")
@@ -666,6 +688,7 @@ def run_radar(args):
 
     out_path = report_mod.write_radar_report(
         rows, args.out, excluded_for_review=review, single_mention=single_mention,
+        creators_mode=args.creators_mode,
     )
     print(f"\nWrote radar report to: {out_path}")
     return 0
