@@ -24,6 +24,7 @@ from collections import Counter
 from src import market as market_mod
 from src import outreach as outreach_mod
 from src import report as report_mod
+from src import roster as roster_mod
 from src import screen as screen_mod
 from src import scrape_client
 
@@ -76,6 +77,13 @@ def parse_args(argv=None):
         help="(radar mode) Scan ONLY your --roster creators (no topic search) and "
              "rank the brands sponsoring them. Corroboration = how many of your "
              "creators ran each brand; no roster-conflict column.",
+    )
+    p.add_argument(
+        "--profile", action="store_true",
+        help="Profile mode: fetch each --roster/--creators creator and emit the "
+             "shareable two-line roster (subs, recent avg views, view "
+             "consistency, role, brand-safety, recurring-fit, conflict). "
+             "Private-analytics fields stay NOT FOUND.",
     )
     p.add_argument(
         "--platforms", default="youtube",
@@ -170,10 +178,14 @@ def parse_args(argv=None):
     if args.creators_mode:
         args.radar = True  # creators-mode is a radar variant
 
-    if sum(bool(m) for m in (args.source, args.market, args.draft, args.radar)) > 1:
-        p.error("choose one mode: --source, --market, --radar, or --draft.")
+    if sum(bool(m) for m in (args.source, args.market, args.draft, args.radar,
+                             args.profile)) > 1:
+        p.error("choose one mode: --source, --market, --radar, --profile, or --draft.")
 
-    if args.radar:
+    if args.profile:
+        if not (args.roster or args.creators):
+            p.error("--profile requires --roster (handle,tags) or --creators (handles).")
+    elif args.radar:
         if args.creators_mode and not args.roster:
             p.error("--creators-mode requires --roster.")
         if not (args.query or args.roster):
@@ -203,6 +215,8 @@ def parse_args(argv=None):
             args.out = "market_report.xlsx"
         elif args.radar:
             args.out = "radar_report.xlsx"
+        elif args.profile:
+            args.out = "roster.txt"
         elif args.source:
             args.out = "sourced_report.xlsx"
         else:
@@ -706,8 +720,64 @@ def run_radar(args):
     return 0
 
 
+def run_profile(args):
+    """Profile mode: fetch each roster creator and emit the two-line roster."""
+    mode = "LIVE" if args.live else "MOCK (sample data)"
+    platform = [p.strip() for p in args.platforms.split(",") if p.strip()][:1] or ["youtube"]
+    platform = platform[0]
+    # Creator list + tags: prefer --roster (handle,tags); else --creators handles.
+    if args.roster:
+        roster = _read_roster(args.roster)
+    else:
+        roster = {h: [] for h in read_handles(args.creators)}
+    handles = list(roster)
+
+    print("Shareable roster (profile mode)")
+    print(f"Mode: {mode} | platform: {platform} | creators: {len(handles)}")
+    print(f"Conflict brand: {args.brand or '(none — conflict NOT SCREENED)'} | "
+          f"window: {args.months}mo\n")
+
+    # Spend gate: print the planned live lookups before any calls.
+    if args.live:
+        per = _per_creator_lookups(platform, args.videos_per_creator)
+        print(f"PLANNED LIVE LOOKUPS: {len(handles)} creators x ~{per} = "
+              f"~{len(handles) * per} (no search).\n")
+
+    entries = []
+    conflicts = 0
+    for handle in handles:
+        record = scrape_client.radar_fetch(
+            handle, platform, live=args.live,
+            months=args.months, max_videos=args.videos_per_creator,
+        )
+        tags = roster.get(handle, [])
+        if record.get("error"):
+            conflict_status = f"UNVERIFIED — {record['error']}"
+        elif args.brand:
+            conflict_status = screen_mod.screen_creator(record, args.brand)["status"]
+        else:
+            conflict_status = "NOT SCREENED (no target brand)"
+        if str(conflict_status).startswith("CONFLICT"):
+            conflicts += 1
+        entries.append(roster_mod.enrich(record, tags, conflict_status))
+        avg = entries[-1]["recent_avg_views"]
+        print(f"  {handle}: subs {entries[-1]['subs']}, avg views {avg}, "
+              f"role {entries[-1]['narrative_role']}, conflict {conflict_status}")
+
+    text = roster_mod.render_roster(entries, brand=args.brand)
+    with open(args.out, "w", encoding="utf-8") as f:
+        f.write(text)
+    print()
+    print(text)
+    print(f"\nWrote shareable roster to: {args.out}")
+    print(f"Total sourced: {len(entries)} | conflicts flagged: {conflicts}")
+    return 0
+
+
 def main(argv=None):
     args = parse_args(argv)
+    if args.profile:
+        return run_profile(args)
     if args.radar:
         return run_radar(args)
     if args.draft:

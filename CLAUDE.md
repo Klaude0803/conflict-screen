@@ -57,16 +57,27 @@ Map each field to what is actually obtainable, and mark the rest NOT FOUND with
 the reason "Scrape Creators API — field not exposed (requires creator-granted
 analytics)":
 
-- **Computable now:** subscriber count; recent average views (mean of recent
-  uploads' view counts); view consistency (spread across last 5–10 uploads);
-  Instagram engagement (likes/comments/plays per post); the channel's OWN stated
-  country (NOT audience location); recent-sponsor history; paid-partnership flag.
-- **NOT FOUND (private analytics, not exposed):** US audience concentration,
-  average view duration, connected-TV / TV-screen share. These come only from a
-  creator's own analytics; write NOT FOUND and note the source. Never infer
-  audience US% from the channel's stated country.
-- **Weak / heuristic only:** evergreen/search signal (older uploads still
-  accruing views is a hint, not a metric) — label it as a heuristic or NOT FOUND.
+- **Computable now (WIRED):** subscriber count; recent average views (mean of
+  recent uploads' view counts); view consistency (spread/CoV across last 5–10
+  uploads); Instagram engagement (avg likes/comments per post, raw not a rate);
+  the channel's OWN stated country (NOT audience location); recent-sponsor
+  history; paid-partnership flag; narrative-role tag; recurring-fit flags; the
+  two-line shareable roster output.
+- **NOT FOUND (private analytics, not exposed) — HARD RULE:** US audience
+  concentration, average view duration (AVD), connected-TV / TV-screen share.
+  These come only from a creator's own analytics. Write NOT FOUND, note the
+  source, and **never infer audience US% from the channel's stated country** —
+  stated country and audience US% are different things and must never be
+  conflated. **Do not estimate or infer these, even under time pressure.**
+- **Pending sources (keep NOT FOUND until one is confirmed and connected):**
+  (1) direct creator requests for AVD / TV-screen share; (2) evaluation of the
+  **Sponsorship.so MCP** for audience and channel stats. Note both as pending;
+  do not wire a source until confirmed.
+- **Weak / heuristic only:** evergreen/search signal — always LABEL it "heuristic
+  only" in every output; it is a hint, not a metric.
+- **AI/avatar-vs-real and FTC disclosure:** the API gives no reliable signal, so
+  these stay FLAGGED for human/visual review — never auto-asserted. Deprioritize
+  AI/avatar-heavy accounts once a human confirms.
 - **TikTok Shop GMV / conversion:** not exposed per-creator; NOT FOUND unless a
   new data source is wired.
 

@@ -60,6 +60,10 @@ def _empty_record(handle):
         # profile) — NOT audience location. Stays None unless the API
         # returns it. audience_geo above is always left empty for YouTube.
         "channel_country": None,
+        # Computed public-signal metrics. None = NOT FOUND (never estimated).
+        "recent_avg_views": None,        # mean of recent uploads' view counts
+        "view_consistency": None,        # {"label", "cov", "n"} spread signal
+        "engagement": None,              # short-form engagement dict (IG)
     }
 
 
@@ -199,9 +203,19 @@ def _fetch_mock(handle, months=None):
             "confidence": s.get("confidence"),
         })
     record["recent_sponsors"] = sponsors
+    # Sample view metrics derived from subs (clearly mock, never live).
+    _mock_view_metrics(record)
     # Mock data is sample data, so it is NOT verified.
     record["verified"] = False
     return record
+
+
+def _mock_view_metrics(record):
+    """Synthesize sample recent-views/consistency for MOCK records only."""
+    subs = record.get("subscribers")
+    if isinstance(subs, int) and subs > 0:
+        sample = [int(subs * f) for f in (0.32, 0.28, 0.35, 0.22, 0.30)]
+        _apply_view_metrics(record, sample)
 
 
 # ---------------------------------------------------------------------------
@@ -258,6 +272,44 @@ def _search_channels_mock(query, limit):
             "subs_hint": data.get("subscribers"),
         })
     return candidates
+
+
+def _apply_view_metrics(record, view_counts):
+    """Set recent_avg_views + view_consistency from real public view counts.
+
+    Uses the most recent 10 samples. Leaves both None (NOT FOUND) if the API
+    returned no view counts. Never estimates a number.
+    """
+    sample = [v for v in view_counts if isinstance(v, int) and v >= 0][:10]
+    if not sample:
+        return
+    mean = sum(sample) / len(sample)
+    record["recent_avg_views"] = int(round(mean))
+    if len(sample) >= 2 and mean > 0:
+        var = sum((v - mean) ** 2 for v in sample) / len(sample)
+        cov = (var ** 0.5) / mean  # coefficient of variation
+        label = "steady" if cov < 0.5 else "variable" if cov < 1.0 else "erratic"
+        record["view_consistency"] = {"label": label, "cov": round(cov, 2),
+                                      "n": len(sample)}
+    else:
+        record["view_consistency"] = {"label": "n/a (one sample)", "cov": None,
+                                      "n": len(sample)}
+
+
+def _apply_ig_engagement(record, posts_stats):
+    """Set engagement from IG post like/comment/play counts (raw signal, not a
+    rate). posts_stats is a list of (likes, comments, plays). NOT FOUND if empty."""
+    likes = [p[0] for p in posts_stats if isinstance(p[0], int)]
+    comments = [p[1] for p in posts_stats if isinstance(p[1], int)]
+    if not likes and not comments:
+        return
+    n = max(len(likes), len(comments)) or 1
+    record["engagement"] = {
+        "avg_likes": int(round(sum(likes) / len(likes))) if likes else None,
+        "avg_comments": int(round(sum(comments) / len(comments))) if comments else None,
+        "posts": n,
+        "note": "raw per-post engagement (not a follower-normalized rate)",
+    }
 
 
 def _parse_iso_dt(value):
@@ -412,6 +464,7 @@ def _fetch_live(handle, months=None, max_videos=None):
         # --- 2. Recent uploads inside the lookback window -----------------
         cutoff = datetime.utcnow() - timedelta(days=30 * months)
         in_window = []  # list of {"url", "date"} for videos within the window
+        recent_views = []  # view counts of recent in-window uploads (real only)
         token = None
         for _ in range(_MAX_VIDEO_PAGES):
             params = {"channelId": channel_id} if channel_id else {"handle": clean_handle}
@@ -430,6 +483,9 @@ def _fetch_live(handle, months=None, max_videos=None):
                 if published < cutoff:
                     reached_old = True
                     break
+                vc = v.get("viewCountInt")
+                if isinstance(vc, int) and vc >= 0:
+                    recent_views.append(vc)
                 if v.get("url"):
                     in_window.append({
                         "url": v["url"],
@@ -441,6 +497,10 @@ def _fetch_live(handle, months=None, max_videos=None):
             # cover the sponsor cap — no point fetching more pages.
             if reached_old or len(in_window) >= max_videos or not token or not videos:
                 break
+
+        # Recent average views + view consistency from the last 5-10 uploads'
+        # PUBLIC view counts. NOT FOUND if the API returned no view counts.
+        _apply_view_metrics(record, recent_views)
 
         # --- 3. Sponsors for each in-window upload ------------------------
         sponsors = []
@@ -642,6 +702,7 @@ def _fetch_instagram_live(handle, months):
         record = _short_form_record(handle, "Instagram")
         record["verified"] = True
         sponsors = []
+        eng = []  # (likes, comments, plays) per in-window post
         next_max_id = None
         for _ in range(SHORT_FORM_MAX_PAGES):
             params = {"handle": clean}
@@ -659,6 +720,8 @@ def _fetch_instagram_live(handle, months):
                 if datetime.strptime(date, "%Y-%m-%d") < cutoff:
                     reached_old = True
                     break
+                eng.append((it.get("like_count"), it.get("comment_count"),
+                            it.get("play_count") or it.get("ig_play_count")))
                 # Only an explicit paid-partnership flag counts as a sponsor.
                 if not (it.get("is_paid_partnership") or it.get("is_ad")):
                     continue
@@ -668,6 +731,7 @@ def _fetch_instagram_live(handle, months):
             if reached_old or not next_max_id or not items:
                 break
         record["recent_sponsors"] = sponsors
+        _apply_ig_engagement(record, eng)
         return record
 
     return _safe_live_fetch(handle, _inner)
@@ -812,6 +876,11 @@ def _radar_fetch_mock(handle, platform, months):
             "confidence": conf, "platform": platform,
         })
     record["recent_sponsors"] = sponsors
+    if platform == "Instagram" and isinstance(record["subscribers"], int):
+        subs = record["subscribers"]
+        _apply_ig_engagement(record, [(int(subs * 0.06), int(subs * 0.004), None)] * 6)
+    else:
+        _mock_view_metrics(record)
     return record
 
 
