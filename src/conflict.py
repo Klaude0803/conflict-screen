@@ -58,6 +58,10 @@ def screen_conflict(record, brand):
             ),
         }
 
+    if not record.get("verified", False):
+        return {"status": UNVERIFIED, "category": category, "matched_sponsors": [],
+                "reason": "Sponsorship history is sample or unverified data."}
+
     sponsors = record.get("recent_sponsors") or []
 
     # No confirmed sponsorship history -> we can't say CLEAR honestly.
