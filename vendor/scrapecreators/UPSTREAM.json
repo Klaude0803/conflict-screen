@@ -1,0 +1,7 @@
+{
+  "repository": "ScrapeCreators/social-media-research-skills",
+  "commit": "64ba7b4dea71e130d2712ffb6c1c1024b3b7c4b2",
+  "license": "MIT",
+  "files": "All 13 original skills/*/SKILL.md files and LICENSE",
+  "policy": "Read relevant playbooks only. Current endpoint documentation and Elite Edge approval rules override stale examples. No automatic paid AI generation."
+}
