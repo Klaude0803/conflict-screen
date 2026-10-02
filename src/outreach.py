@@ -6,8 +6,7 @@ import json
 import os
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from urllib.parse import urlencode
-from urllib.request import Request, urlopen
+from src.research_client import ResearchClient, safe_open
 from zoneinfo import ZoneInfo
 
 API_ROOT = 'https://api.scrapecreators.com'
@@ -16,16 +15,9 @@ QUEUE_FIELDS = ['Status', 'Gmail Draft ID', 'Recipient', 'Subject', 'Recipient T
 
 
 
-def api_get(path, params, opener=urlopen):
-    key = os.environ.get('SCRAPECREATORS_API_KEY') or os.environ.get('SCRAPE_CREATORS_API_KEY')
-    if not key:
-        raise ValueError('Set SCRAPECREATORS_API_KEY in the environment. Never commit it.')
-    request = Request(API_ROOT + path + '?' + urlencode(params), headers={'x-api-key': key})
-    with opener(request, timeout=30) as response:
-        result = json.load(response)
-    if result.get('success') is not True:
-        raise ValueError('Research API did not confirm success; do not use partial results.')
-    return result
+def api_get(path, params, opener=safe_open):
+    # Unbudgeted library calls may reuse cache but cannot spend credits.
+    return ResearchClient(approved_credits=0, opener=opener).get(path, params)
 
 
 def research_latest(handle, fetch=api_get):
@@ -113,12 +105,16 @@ def main():
     research = sub.add_parser('research')
     research.add_argument('--handle', required=True)
     research.add_argument('--out', required=True)
+    research.add_argument('--approved-credits', type=int, default=0)
+    research.add_argument('--cache-dir', default='.research-cache')
     prepare = sub.add_parser('prepare')
     prepare.add_argument('--input', required=True, help='JSON arguments to prepare_outreach')
     prepare.add_argument('--out', required=True)
     args = parser.parse_args()
     if args.command == 'research':
-        result = research_latest(args.handle)
+        client = ResearchClient(args.approved_credits, args.cache_dir)
+        result = research_latest(args.handle, fetch=client.get)
+        result['usage'] = client.usage()
     else:
         result = prepare_outreach(**json.loads(Path(args.input).read_text()))
     Path(args.out).write_text(json.dumps(result, indent=2) + '\n')

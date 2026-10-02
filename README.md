@@ -1,5 +1,23 @@
 # Creator–Brand Research & Conflict-Screening Toolkit
 
+## Current implementation
+
+Start with [RESEARCH.md](RESEARCH.md) for the new cached, credit-bounded research layer and all 13 pinned ScrapeCreators playbooks. Repository-based agents follow [AGENTS.md](AGENTS.md).
+
+```sh
+python -m src.research skills
+python -m src.research plan --mode creator --handle AndrewGold --out private-research/plan.json
+python -m unittest discover -s tests -v
+```
+
+Executable research supports bounded YouTube profiles, recent-upload metrics, latest public captions, sponsor candidates, observed related-video discovery and competitor data packets. The playbooks support further analysis of supplied evidence across platforms. ChatGPT or the interactive agent interprets the data; no paid AI generation is invoked.
+
+`src.outreach` prepares review-only outreach payloads with sender and timezone checks. Live collection needs a separately accepted ScrapeCreators credit allowance. The existing Make/Google Sheets workflow handles Gmail drafts and user-approved sending; GitHub code does not send emails or run automatically in Make.
+
+The legacy `run.py` screening command still uses mock data by default, and its live conflict client remains unimplemented. The six modes described below are the original roadmap, not six implemented CLI flags. Partial public sponsorship scans must never be treated as proof a creator is conflict free.
+
+## Original roadmap
+
 A command-line toolkit that automates influencer-marketing research by pulling live creator and sponsorship data from the Scrape Creators API and turning it into structured, decision-ready reports. Built and operated through Claude Code.
 
 It answers questions that normally take hours of manual scrolling: *Which brands are actively sponsoring creators in a given niche? Has a creator run a competing brand recently? Which creators fit a specific campaign brief?* — and returns the answers as clean spreadsheets, with every unverified data point flagged rather than guessed.

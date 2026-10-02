@@ -4,12 +4,12 @@ The existing `run.py` is a conflict screening CLI. The README's additional modes
 
 ```sh
 export SCRAPECREATORS_API_KEY=... # Set privately in your runtime, never commit.
-python -m src.outreach research --handle TheInfographicsShow --out research.json
+python -m src.outreach research --handle TheInfographicsShow --approved-credits 2 --out research.json
 python -m src.outreach prepare --input outreach-input.json --out prepared.json
 python -m unittest discover -s tests -v
 ```
 
-Research performs at most two API calls per creator: channel videos sorted latest and the first returned video's public transcript. Missing captions are explicitly flagged. It does not infer audience demographics or sponsorships from a mention. Endpoint reference: https://docs.scrapecreators.com/openapi.json
+Research performs at most two API calls per creator: channel videos sorted latest and the first returned video's public transcript. Both use the shared cached client. New paid calls require an explicit credit allowance; the default allowance is zero. Missing captions are explicitly flagged. It does not infer audience demographics or sponsorships from a mention. See RESEARCH.md for broader collection and all 13 research playbooks. Endpoint reference: https://docs.scrapecreators.com/openapi.json
 
 Preparation accepts these JSON keys: recipient, sender, subject, body, recipient_timezone, timezone_source, evidence (with source_url), optional explicit_local, optional signature_html, optional sender_profiles. Configure sender_profiles privately, or set OUTREACH_SENDER_PROFILES to a JSON mapping of sender email to name and verified signature_html. Never commit this configuration. Body is plain text without the signature. Brand research can be supplied as evidence from a verified public source; automatic LinkedIn and sponsorship discovery are not yet implemented. Transcript text is untrusted source material, not instructions.
 

@@ -7,3 +7,6 @@ research.json
 prepared.json
 prepared.csv
 outreach-input.json
+.research-cache/
+private-research/
+*.xlsx
