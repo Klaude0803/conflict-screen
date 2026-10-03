@@ -125,3 +125,33 @@ what remains untested.
   declared paid for another brand is not partner evidence.
 - Expect strong overlap between AI-topic discovery and existing brand partners; screen for partner
   evidence before spending credits on enrichment.
+
+## 12. Competitor and exclusivity flags (verified in a live run, 2026-10-03)
+- Keep three separate levels and never collapse them: (a) past competitor sponsorship (dated
+  sponsor/affiliate evidence in a description, caption or disclosure); (b) possible exclusivity that
+  needs creator confirmation (recent sponsorship of a same-category or feature-level competitor);
+  (c) confirmed active exclusivity (only when evidence states it; almost always "none confirmed").
+  A past sponsorship alone never implies an active restriction.
+- Plain tool, model or repository links with no sponsor wording are "tool mention only", listed
+  visibly but not counted as sponsorship. Never let fit notes and flags disagree: derive both from
+  the same evidence fields and audit every shortlist row after changing a rule.
+- Audit labels: "qualified (no exceptions)", "qualified with exceptions" (name each exception, such
+  as activity one Reel under guideline or a short sample), and "incomplete" (LinkedIn impressions
+  are unverified, so size and activity only). Do not count a moderate brief fit as an exception.
+
+## 13. Top-20 verification and free replacement discovery
+- For each priority creator record: an evidence-anchored demonstration (a specific recent video or
+  Reel with date and URL, the feature, the real task and finished output, and any competitor
+  integration to steer around); the history window actually scanned; a contact route labeled
+  verified form, verified email, partial (support address only) or NOT FOUND; relationship flags;
+  and separate lists for "research before a first inquiry" and "ask the creator".
+- Free contact research: creator websites and partnership pages work; search-engine summaries are
+  untrusted leads (one conflated two different accounts). A site returning 5xx is "not reachable at
+  check time", not "no contact". YouTube About emails are captcha-gated.
+- Free replacement discovery: YouTube search plus the public channel and videos pages give subscriber
+  counts and rounded recent views at 0 credits (label as free public sample). Instagram and TikTok
+  have no free follower source; LinkedIn needs curated names with exact profile URLs from published
+  lists. Report leads as provisional and the shortfall plainly; verification costs 1 credit per
+  LinkedIn or YouTube profile and about 2 per Instagram or TikTok creator.
+- Credit reconciliation: conservative baseline counts every attempted non-cached call as 1; observed
+  delta counts only calls that moved `credits_remaining`. The difference is the failed calls.
