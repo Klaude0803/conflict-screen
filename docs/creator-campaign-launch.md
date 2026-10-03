@@ -105,3 +105,23 @@ Report counts separately: discovered, enriched, excluded, outreach-ready. The go
 mid-to-large, brief-aligned candidates, not N names. Do not describe unscreened seeds as cleared.
 Finish each substantial step with a plain-language recap: what changed, what the user does next,
 what remains untested.
+
+## 11. Collection lessons (verified in a live run, 2026-10-03)
+- Keep a hard-cap ledger (conservative: count every failed call as 1) and also read the account
+  balance delta from `credits_remaining`; report both. HTTP 404s were not charged; 500s and network
+  errors are not retried automatically (one deliberate manual retry is fine and must be reported).
+- Discovery yield by endpoint: YouTube video search (free page) beats channel search; TikTok
+  `/v1/tiktok/search/keyword` with `sort_by=most-liked&date_posted=last-3-months` returns real
+  creators with `follower_count` (about half 100K+), whereas `/v1/tiktok/search/users` returns
+  name-matched tiny accounts. Instagram `/v2/instagram/reels/search` returns 10 reels per page
+  with no follower counts (a profile request per owner is needed). LinkedIn post search has weak
+  yield and `/v1/linkedin/profile` needs the exact profile URL (guessed slugs 404).
+- Per-creator verification cost: YouTube feed 1 request (30 long-form items with full descriptions,
+  second page only if short), TikTok feed 1-2 requests (about 10 per page; 20 needed), Instagram
+  profile 1 + Reels 1 (12 Reels, drop old pinned outliers), LinkedIn profile 1 (no impressions).
+- Sponsor screening works best by reading the descriptions already fetched, plus the
+  `is_paid_promotions=true` list (scoped to the channel, 30 per page, reaches back only weeks for
+  heavy sponsors, so the 12-month window is usually incomplete). A Manus mention inside a video
+  declared paid for another brand is not partner evidence.
+- Expect strong overlap between AI-topic discovery and existing brand partners; screen for partner
+  evidence before spending credits on enrichment.

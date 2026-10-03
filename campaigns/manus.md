@@ -40,3 +40,9 @@ creators whose primary format is income claims, and require disclosure complianc
   resumed, not duplicated.
 - Dedupe sources: Workflow Settings "Dedupe" row (channel ID, normalized email, brand domain, both
   inboxes, existing roster, previous weekly batches).
+
+## Partner-detection patterns seen on other platforms
+TikTok captions with `#manuspartner` or `#ad` plus a Manus mention, and TikTok paid-partnership/ad
+flags on Manus videos; Instagram captions with `manus.im/redeem?c=` codes. Search TikTok and
+Instagram for "manus ai" and cross-check handles in the pool; absence from those searches is not
+clearance.
