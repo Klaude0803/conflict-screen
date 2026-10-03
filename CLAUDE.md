@@ -130,3 +130,14 @@ NOT FOUND.
 Fields with no confirmed value are written literally as `NOT FOUND` on the line.
 The roster carries no fees, CPMs, GMV dollars, or deal terms — creator-side facts
 only — and is handed to Melly to route.
+
+## 8) Creator Campaign Launch (standing workflow)
+
+When the task is "source N creators for a brand brief", read and follow
+`docs/creator-campaign-launch.md` (universal rules: brief-derived niches, mid-to-large thresholds
+proposed before paid collection, platform coverage, sponsor-screening definitions, honest
+relationship checks, credit options, outreach state). Brand-specific facts live in
+`campaigns/<brand>.md` (currently `campaigns/manus.md`); load only the file for the active campaign.
+Research outputs, candidate lists, contacts, inbox evidence and credentials stay in git-ignored
+`private-research/` and the private tracker; never commit them. These rules add to, and do not
+loosen, sections 1-7 above (spend gate, NOT FOUND, no rates, creator-side only, Melly handoff).
