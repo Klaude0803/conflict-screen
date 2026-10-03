@@ -179,3 +179,27 @@ what remains untested.
 - Free YouTube screening: search-result owner IDs, channel page subscriber text, the channel videos
   tab for rounded views and relative ages (abbreviated forms such as 1mo or 2d), and watch pages
   (attributedDescription) for descriptions. Label all of it a provisional free sample.
+
+## 15. Holds, routes and copy format (verified in a live run, 2026-10-03)
+- Verify replacements only from leads with evidence: mine earlier discovery data for observed follower
+  counts and exact profile URLs before spending. A search-result URL can still return 404 from the
+  profile endpoint (count it conservatively; it was not charged). Report requests, cost per endpoint,
+  conservative cumulative and the observed balance delta separately, and keep the step cap.
+- A shared first name is not evidence of affiliation: resolve identity from canonical profiles,
+  contact domains and the internal sender's signature before holding anyone.
+- Shared management is a routing point: send one agency-level message naming the creators, and leave
+  an existing tracker prospect's draft untouched. Old outreach or a relationship needs a thread-aware
+  continuation: read the whole thread for replies, opt-outs and open negotiations first, reuse the
+  formats the creator's team already listed (for example Shoutout/Integration versus Dedicated
+  Video), and say the earlier exchange concerned another partner.
+- Separate routes in exports: email, contact form or sponsor portal (no recipient email, URL in its
+  own column), agency email, and DM (a verified profile of the creator, including the Instagram link
+  on a channel page). Never put a URL in a mail recipient field. DM copy asks one question only and
+  its sending account must be defined first.
+- Frame every demonstration as an untested proposal and tie it to documented capabilities (read the
+  vendor docs index). Do not name competitors; paraphrase titles that contain them. Ask for rates for
+  relevant sponsorship formats instead of implying a fixed deliverable.
+- Exports: real line breaks inside quoted CSV fields, a separate HTML body column, and a check that
+  no literal backslash-n sequence appears; remind the importer to convert any it finds.
+- Re-review a held high-profile candidate against the brief and recent content: keep it on a specific
+  feasible demonstration, hold it if no business route exists, and never decide on follower count.
