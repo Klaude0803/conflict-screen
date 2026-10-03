@@ -203,3 +203,21 @@ what remains untested.
   no literal backslash-n sequence appears; remind the importer to convert any it finds.
 - Re-review a held high-profile candidate against the brief and recent content: keep it on a specific
   feasible demonstration, hold it if no business route exists, and never decide on follower count.
+
+## 16. Batch preparation and account access (verified in a live run, 2026-10-03)
+- Before drafting, confirm which mailbox each connector actually authenticates as (labels, sent
+  folder, draft list). A connector for the brand owner's mailbox is not the creator-owner inbox: report
+  that blocker, do not create creator drafts there, and do not switch creator outreach to the brand
+  owner's account. Mail the creator owner sent with the brand owner in cc is partial evidence only.
+- A Drive connector may be read-only for cell content. Read the target tab's headers and existing rows,
+  keep the dropdown vocabularies (Status, Followup Status, Sender), and deliver an import-ready CSV in
+  the exact tab schema with Status Hold, blank Draft Link and Gmail Draft ID, real line breaks, no URL
+  in Recipient, and existing rows untouched. Setting the "Draft Prepared" status triggers draft
+  creation in the automation, so leave that to the owner.
+- Systemic gates (creator-owner inbox deduplication, brand relationship clearance) belong in each row's
+  Stop Reason; hold only genuinely blocked rows individually in their own file so the rest are not delayed.
+- Timezones come only from reliable evidence (single-timezone declared country, profile location, the
+  creator's own stated move). Multi-timezone countries stay blank and unscheduled. Proposed send slots
+  are not approvals.
+- Final copy pass: vary the proposal lead-in, say plainly that a scenario has not been run, and avoid
+  promising what the product will produce.
