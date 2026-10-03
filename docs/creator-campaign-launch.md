@@ -155,3 +155,27 @@ what remains untested.
   LinkedIn or YouTube profile and about 2 per Instagram or TikTok creator.
 - Credit reconciliation: conservative baseline counts every attempted non-cached call as 1; observed
   delta counts only calls that moved `credits_remaining`. The difference is the failed calls.
+
+## 14. Full-pool processing and outreach-copy export (verified in a live run, 2026-10-03)
+- Process the whole shortlist, not a top 20. Split every candidate into exactly three groups:
+  ELIGIBLE (review-only draft), HELD (name the specific unresolved issue per row) and EXCLUDED
+  (evidence: prior partner, suppression, measured shortfall). The top 20 is only a sorting view.
+- Past competitor sponsorship never excludes. Ask about exclusivity in the first inquiry. Ask for
+  demographics, rates, availability, prior brand work and LinkedIn impressions in the inquiry itself
+  rather than requiring them first.
+- Typical holds: no verified public business route; support-only address; existing tracker draft or
+  Gmail thread; shared agency domain with another candidate or prior unanswered agency outreach
+  (decide one agency-level approach); a name that matches an internal sender.
+- Dedupe in one pass: tracker tabs, suppression, then Gmail by every contact email, agency domain and
+  name, plus the brand keyword. A connected mailbox may hold mail the creator-owner account sent with
+  cc; that is partial evidence only, so still mark the creator-owner inbox PENDING when it is not
+  connected. Create no live drafts when the inbox cannot be checked: export copy instead.
+- Contact harvest without credits: YouTube channel About links, then the creator's site, link hub and
+  /contact-style pages; keep only addresses on the creator's own domain or link hub; discard platform
+  and support addresses.
+- Copy: Andreah's identity, personalised only from title or caption metadata (never claim a video was
+  watched), no competitor names (paraphrase titles that contain them), no rates or campaign authority,
+  and mark send slots PENDING while the timezone is unverified.
+- Free YouTube screening: search-result owner IDs, channel page subscriber text, the channel videos
+  tab for rounded views and relative ages (abbreviated forms such as 1mo or 2d), and watch pages
+  (attributedDescription) for descriptions. Label all of it a provisional free sample.
